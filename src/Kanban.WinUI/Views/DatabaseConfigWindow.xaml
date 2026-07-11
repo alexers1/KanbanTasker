@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Window
+    x:Class="Kanban_WinUI.Views.DatabaseConfigWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Kanban Tasker — Database Setup">
+    <Window.SystemBackdrop>
+        <MicaBackdrop Kind="BaseAlt" />
+    </Window.SystemBackdrop>
+
+    <ScrollViewer Padding="28,20">
+        <StackPanel MaxWidth="440" Spacing="12">
+            <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="Connect to SQL Server" />
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="Kanban Tasker stores your boards in a SQL Server / SQL Server Express database. Enter the connection details — they are saved to appsettings.json once the connection is verified."
+                TextWrapping="Wrap" />
+
+            <TextBox
+                x:Name="ServerBox"
+                Header="Server"
+                PlaceholderText=".\SQLEXPRESS" />
+            <TextBox
+                x:Name="DatabaseBox"
+                Header="Database"
+                PlaceholderText="KanbanTasker" />
+
+            <ToggleSwitch
+                x:Name="WindowsAuthToggle"
+                Header="Authentication"
+                OffContent="SQL Server login"
+                OnContent="Windows authentication"
+                Toggled="WindowsAuthToggle_Toggled" />
+
+            <TextBox
+                x:Name="UserBox"
+                Header="User name"
+                PlaceholderText="kanban" />
+            <PasswordBox
+                x:Name="PasswordBox"
+                Header="Password" />
+
+            <TextBlock
+                x:Name="StatusText"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextWrapping="Wrap" />
+
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button
+                    x:Name="ConnectButton"
+                    Click="ConnectButton_Click"
+                    Style="{ThemeResource AccentButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon FontSize="14" Glyph="&#xE8CE;" />
+                        <TextBlock Text="Test and save" />
+                    </StackPanel>
+                </Button>
+                <ProgressRing
+                    x:Name="BusyRing"
+                    Width="22"
+                    Height="22"
+                    IsActive="False" />
+            </StackPanel>
+
+            <TextBlock
+                FontSize="12"
+                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                Text="Tip: the database is created automatically if it does not exist (the login needs dbcreator rights for that) — otherwise create an empty database with this name first."
+                TextWrapping="Wrap" />
+        </StackPanel>
+    </ScrollViewer>
+</Window>

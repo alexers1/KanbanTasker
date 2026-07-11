@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Kanban.WinUI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "Kanban.WinUI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

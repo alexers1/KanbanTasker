@@ -1,0 +1,732 @@
+<Page
+    x:Class="Kanban_WinUI.Views.BoardView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Kanban.WinUI.Views"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:Kanban_WinUI.Models"
+    xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
+    xmlns:Core="using:Microsoft.Xaml.Interactions.Core"
+    xmlns:Interactivity="using:Microsoft.Xaml.Interactivity"
+    xmlns:textconverters="using:Kanban_WinUI.Converters"
+    x:Name="boardViewPage"
+    mc:Ignorable="d">
+    <!-- Native WinUI 3 kanban board: layered fluent columns over Mica, animated cards, acrylic edit pane. -->
+
+    <Page.Resources>
+        <ResourceDictionary>
+            <textconverters:StringToColorConverter x:Key="stringToColorConvertor" />
+            <textconverters:CardCountConverter x:Key="cardCountConverter" />
+            <textconverters:NullableDateTimeOffsetToBoolConverter x:Key="NullableDateTimeOffsetToBoolConverter" />
+            <textconverters:StringToNullableDateTimeOffsetConverter x:Key="stringToDateConverter" />
+            <textconverters:StringToTimeSpanConverter x:Key="stringToTimeSpanConverter" />
+            <textconverters:IsNullConverter x:Key="isNullConverter" />
+            <textconverters:BoolToBrushConverter x:Key="BoolToBrushConverter" />
+            <textconverters:BoolToColumnWidthConverter x:Key="ColumnWidthConverter" />
+
+            <!-- Flyout for column edit -->
+            <Flyout x:Name="flyoutEditColumn" Placement="Bottom">
+                <StackPanel Width="220" Spacing="10">
+                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="Edit column" />
+                    <TextBox
+                        x:Name="txtBoxColName"
+                        x:FieldModifier="public"
+                        Header="Column name"
+                        Loaded="txtBoxColName_Loaded"
+                        MaxLength="24"
+                        Text="{Binding ColumnName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        TextChanged="txtBoxColName_TextChanged" />
+                    <muxc:NumberBox
+                        x:Name="maxLimitNumberBox"
+                        Header="Max task limit"
+                        LargeChange="25"
+                        Maximum="100"
+                        Minimum="0"
+                        SmallChange="1"
+                        SpinButtonPlacementMode="Inline"
+                        ValueChanged="maxLimitNumberBox_ValueChanged"
+                        Value="{Binding MaxTaskLimit, Mode=TwoWay}" />
+                    <Button
+                        x:Name="btnSaveColChanges"
+                        x:FieldModifier="public"
+                        HorizontalAlignment="Stretch"
+                        Click="BtnSaveColChanges_Click"
+                        CommandParameter="{Binding ColumnName}"
+                        Content="Save changes"
+                        Style="{ThemeResource AccentButtonStyle}" />
+                </StackPanel>
+            </Flyout>
+
+            <!-- Fluent kanban card: layered surface, priority accent edge, hover actions, tag + due-date chips -->
+            <DataTemplate x:Key="KanbanCardTemplate">
+                <Grid
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    ContextFlyout="{StaticResource taskFlyout}"
+                    CornerRadius="8">
+                    <Interactivity:Interaction.Behaviors>
+                        <Core:EventTriggerBehavior EventName="PointerEntered">
+                            <Core:ChangePropertyAction
+                                PropertyName="Visibility"
+                                TargetObject="{Binding ElementName=BtnEdit}"
+                                Value="Visible" />
+                            <Core:ChangePropertyAction
+                                PropertyName="Visibility"
+                                TargetObject="{Binding ElementName=BtnDelete}"
+                                Value="Visible" />
+                        </Core:EventTriggerBehavior>
+                        <Core:EventTriggerBehavior EventName="PointerExited">
+                            <Core:ChangePropertyAction
+                                PropertyName="Visibility"
+                                TargetObject="{Binding ElementName=BtnEdit}"
+                                Value="Collapsed" />
+                            <Core:ChangePropertyAction
+                                PropertyName="Visibility"
+                                TargetObject="{Binding ElementName=BtnDelete}"
+                                Value="Collapsed" />
+                        </Core:EventTriggerBehavior>
+                    </Interactivity:Interaction.Behaviors>
+
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Priority accent edge (Low=green / Medium=orange / High=red) -->
+                    <Rectangle
+                        Width="4"
+                        Margin="8,10,0,10"
+                        Fill="{Binding ColorKey, Converter={StaticResource stringToColorConvertor}}"
+                        RadiusX="2"
+                        RadiusY="2" />
+
+                    <StackPanel
+                        Grid.Column="1"
+                        Margin="10,8,8,10"
+                        Spacing="6">
+
+                        <!-- Title + hover actions -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                FontSize="14"
+                                FontWeight="SemiBold"
+                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                Text="{Binding Title}"
+                                TextWrapping="Wrap"
+                                ToolTipService.ToolTip="{Binding Title}" />
+                            <StackPanel
+                                Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="2">
+                                <HyperlinkButton
+                                    x:Name="BtnEdit"
+                                    Click="CardBtnEdit_Click"
+                                    Command="{Binding ElementName=boardViewPage, Path=ViewModel.EditTaskCommand}"
+                                    CommandParameter="{Binding Id}"
+                                    Style="{ThemeResource CardHyperlinkButtonStyle}"
+                                    ToolTipService.ToolTip="Edit task"
+                                    Visibility="Collapsed">
+                                    <FontIcon FontSize="13" Glyph="&#xE70F;" />
+                                </HyperlinkButton>
+                                <HyperlinkButton
+                                    x:Name="BtnDelete"
+                                    Click="CardBtnDelete_Click"
+                                    CommandParameter="{Binding Id}"
+                                    Style="{ThemeResource CardHyperlinkButtonStyle}"
+                                    ToolTipService.ToolTip="Delete task"
+                                    Visibility="Collapsed">
+                                    <FontIcon FontSize="13" Glyph="&#xE74D;" />
+                                </HyperlinkButton>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Description -->
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            MaxLines="4"
+                            Text="{Binding Description}"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="Wrap"
+                            Visibility="{Binding Description, Converter={StaticResource NullToVisibilityConverter}}" />
+
+                        <!-- Tag chips -->
+                        <ItemsControl ItemsSource="{Binding Tags}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="4" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border
+                                        Padding="8,2"
+                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        CornerRadius="8">
+                                        <TextBlock
+                                            FontSize="11"
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            Text="{Binding}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Footer: due date chip (red when overdue) + card age -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border
+                                Padding="8,2"
+                                HorizontalAlignment="Left"
+                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                CornerRadius="8"
+                                Visibility="{Binding DueDate, Converter={StaticResource NullToVisibilityConverter}}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <FontIcon
+                                        FontSize="11"
+                                        Foreground="{Binding IsOverdue, Converter={StaticResource BoolToBrushConverter}, ConverterParameter=Accent}"
+                                        Glyph="&#xE787;" />
+                                    <TextBlock
+                                        FontSize="11"
+                                        Foreground="{Binding IsOverdue, Converter={StaticResource BoolToBrushConverter}, ConverterParameter=Accent}"
+                                        Text="{Binding DueDate, Converter={StaticResource DateToShortDateConverter}}" />
+                                </StackPanel>
+                            </Border>
+                            <StackPanel
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal"
+                                Spacing="4"
+                                ToolTipService.ToolTip="Card age since creation">
+                                <FontIcon
+                                    FontSize="10"
+                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Glyph="&#xE823;" />
+                                <TextBlock
+                                    FontSize="11"
+                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Text="{Binding AgeDisplay}" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </DataTemplate>
+
+            <!-- Right-tap context flyout for cards -->
+            <CommandBarFlyout x:Name="taskFlyout" Placement="Right">
+                <AppBarButton
+                    x:Name="flyoutBtnEdit"
+                    AllowFocusOnInteraction="True"
+                    Click="TappedFlyoutBtnEdit_Click"
+                    Command="{x:Bind ViewModel.EditTaskCommand}"
+                    CommandParameter="{x:Bind ViewModel.CurrentTask.Id, Mode=OneWay}"
+                    Icon="Edit"
+                    Label="Edit Task"
+                    Style="{ThemeResource AppBarButtonCustomStyle}"
+                    ToolTipService.ToolTip="Edit" />
+                <AppBarButton
+                    x:Name="flyoutBtnDelete"
+                    AllowFocusOnInteraction="True"
+                    Icon="Delete"
+                    Label="Delete"
+                    Style="{ThemeResource AppBarButtonCustomStyle}"
+                    ToolTipService.ToolTip="Delete">
+                    <AppBarButton.Flyout>
+                        <Flyout x:Name="tappedFlyoutDeleteCard" Placement="Bottom">
+                            <StackPanel Spacing="8">
+                                <TextBlock FontWeight="SemiBold" Text="Delete this task?" />
+                                <Button
+                                    x:Name="tappedFlyoutBtnDeleteCardYes"
+                                    Click="tappedFlyoutBtnDeleteCardYes_Click"
+                                    Content="Yes, delete this task" />
+                            </StackPanel>
+                        </Flyout>
+                    </AppBarButton.Flyout>
+                </AppBarButton>
+            </CommandBarFlyout>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <!-- Page background stays transparent so the Mica backdrop shows through -->
+    <Grid Padding="16,4,16,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Board header -->
+        <Grid Margin="4,8,4,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock
+                VerticalAlignment="Center"
+                Style="{ThemeResource TitleTextBlockStyle}"
+                Text="{Binding Board.Name}" />
+            <Button
+                Grid.Column="1"
+                Click="BtnNewColumn_Click"
+                Style="{ThemeResource AccentButtonStyle}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontSize="14" Glyph="&#xE710;" />
+                    <TextBlock Text="New Column" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Board area: columns + edit pane -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ScrollViewer
+                HorizontalScrollBarVisibility="Auto"
+                VerticalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{x:Bind ViewModel.Columns}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <StackPanel.ChildrenTransitions>
+                                    <TransitionCollection>
+                                        <EntranceThemeTransition IsStaggeringEnabled="True" />
+                                        <RepositionThemeTransition />
+                                    </TransitionCollection>
+                                </StackPanel.ChildrenTransitions>
+                            </StackPanel>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- Column: a fluent "layer" surface over Mica; collapses to a narrow strip -->
+                            <Border
+                                Width="{Binding IsCollapsed, Converter={StaticResource ColumnWidthConverter}}"
+                                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Collapsed strip: expand button + count + rotated name -->
+                                    <Grid
+                                        Grid.RowSpan="2"
+                                        Padding="0,8"
+                                        Visibility="{Binding IsCollapsed, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
+                                        <Button
+                                            HorizontalAlignment="Center"
+                                            Click="ToggleCollapse_Click"
+                                            CommandParameter="{Binding}"
+                                            Style="{ThemeResource IconButtonStyle}"
+                                            ToolTipService.ToolTip="Expand column">
+                                            <FontIcon FontSize="13" Glyph="&#xE76C;" />
+                                        </Button>
+                                        <Border
+                                            Grid.Row="1"
+                                            Margin="0,8,0,0"
+                                            Padding="8,1"
+                                            HorizontalAlignment="Center"
+                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                            CornerRadius="10">
+                                            <TextBlock FontSize="11" Foreground="{Binding IsOverLimit, Converter={StaticResource BoolToBrushConverter}}" Text="{Binding TaskCount}" />
+                                        </Border>
+                                        <TextBlock
+                                            Grid.Row="2"
+                                            Width="180"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            FontWeight="SemiBold"
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            RenderTransformOrigin="0.5,0.5"
+                                            Text="{Binding ColumnName}"
+                                            TextAlignment="Center"
+                                            TextTrimming="CharacterEllipsis"
+                                            ToolTipService.ToolTip="{Binding ColumnName}">
+                                            <TextBlock.RenderTransform>
+                                                <RotateTransform Angle="90" />
+                                            </TextBlock.RenderTransform>
+                                        </TextBlock>
+                                    </Grid>
+
+                                    <!-- Column header (hidden while collapsed) -->
+                                    <Grid Padding="14,10,6,6" Visibility="{Binding IsCollapsed, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Inverse}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel
+                                            VerticalAlignment="Center"
+                                            Orientation="Horizontal"
+                                            Spacing="8">
+                                            <TextBlock
+                                                VerticalAlignment="Center"
+                                                FontWeight="SemiBold"
+                                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                Text="{Binding ColumnName}" />
+                                            <!-- WIP counter chip: turns red when at the limit -->
+                                            <Border
+                                                Padding="8,1"
+                                                VerticalAlignment="Center"
+                                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                CornerRadius="10">
+                                                <TextBlock FontSize="11" Foreground="{Binding IsOverLimit, Converter={StaticResource BoolToBrushConverter}}">
+                                                    <Run Text="{Binding TaskCount}" /><Run Text=" / " /><Run Text="{Binding MaxTaskLimit}" />
+                                                </TextBlock>
+                                            </Border>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                            <Button
+                                                Click="BtnNewTaskCurrentColumn_Click"
+                                                CommandParameter="{Binding}"
+                                                Style="{ThemeResource IconButtonStyle}"
+                                                ToolTipService.ToolTip="Add task">
+                                                <FontIcon FontSize="13" Glyph="&#xE710;" />
+                                            </Button>
+                                            <Button
+                                                Click="BtnEditColumn_Click"
+                                                CommandParameter="{Binding}"
+                                                Style="{ThemeResource IconButtonStyle}"
+                                                ToolTipService.ToolTip="Edit column">
+                                                <FontIcon FontSize="13" Glyph="&#xE70F;" />
+                                            </Button>
+                                            <Button
+                                                Click="BtnDeleteColumn_Click"
+                                                CommandParameter="{Binding}"
+                                                Style="{ThemeResource IconButtonStyle}"
+                                                ToolTipService.ToolTip="Delete column">
+                                                <FontIcon FontSize="13" Glyph="&#xE74D;" />
+                                            </Button>
+                                            <Button
+                                                Click="ToggleCollapse_Click"
+                                                CommandParameter="{Binding}"
+                                                Style="{ThemeResource IconButtonStyle}"
+                                                ToolTipService.ToolTip="Collapse column">
+                                                <FontIcon FontSize="13" Glyph="&#xE76B;" />
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Cards (drag between columns / reorder within, with fluent animations) -->
+                                    <ListView
+                                        Grid.Row="1"
+                                        Padding="8,2,8,8"
+                                        Visibility="{Binding IsCollapsed, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Inverse}"
+                                        AllowDrop="True"
+                                        Background="Transparent"
+                                        CanDragItems="True"
+                                        CanReorderItems="True"
+                                        DragItemsCompleted="ColumnCards_DragItemsCompleted"
+                                        DragItemsStarting="ColumnCards_DragItemsStarting"
+                                        DragOver="Column_DragOver"
+                                        Drop="Column_Drop"
+                                        ItemTemplate="{StaticResource KanbanCardTemplate}"
+                                        ItemsSource="{Binding Tasks}"
+                                        SelectionMode="None">
+                                        <ListView.ItemContainerTransitions>
+                                            <TransitionCollection>
+                                                <AddDeleteThemeTransition />
+                                                <RepositionThemeTransition />
+                                                <ContentThemeTransition />
+                                            </TransitionCollection>
+                                        </ListView.ItemContainerTransitions>
+                                        <ListView.ItemContainerStyle>
+                                            <Style TargetType="ListViewItem">
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                <Setter Property="Padding" Value="0" />
+                                                <Setter Property="Margin" Value="0,0,0,8" />
+                                                <Setter Property="MinHeight" Value="0" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="ListViewItem">
+                                                            <ListViewItemPresenter
+                                                                Padding="0"
+                                                                HorizontalContentAlignment="Stretch"
+                                                                ContentMargin="0"
+                                                                DragBackground="Transparent"
+                                                                PointerOverBackground="Transparent"
+                                                                PressedBackground="Transparent"
+                                                                SelectedBackground="Transparent" />
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </ListView.ItemContainerStyle>
+                                    </ListView>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Task edit pane: acrylic glass panel sliding in from the right -->
+            <Border
+                Grid.Column="1"
+                Width="340"
+                Margin="12,0,0,0"
+                Background="{ThemeResource AcrylicBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Visibility="{Binding IsPaneOpen, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Border.Transitions>
+                    <TransitionCollection>
+                        <PaneThemeTransition Edge="Right" />
+                    </TransitionCollection>
+                </Border.Transitions>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Pane header -->
+                    <Grid Padding="16,12,8,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Style="{ThemeResource SubtitleTextBlockStyle}"
+                            Text="{Binding PaneTitle}" />
+                        <Button
+                            Grid.Column="1"
+                            Click="ClosePaneButton_Click"
+                            Style="{ThemeResource IconButtonStyle}"
+                            ToolTipService.ToolTip="Close">
+                            <FontIcon FontSize="13" Glyph="&#xE711;" />
+                        </Button>
+                    </Grid>
+
+                    <ScrollViewer Grid.Row="1" Padding="16,4,16,4">
+                        <StackPanel Spacing="10">
+                            <!-- Column (category) the task lives in -->
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Glyph="&#xE8FD;" />
+                                <TextBlock
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{Binding CurrentTask.Category}" />
+                            </StackPanel>
+                            <TextBox
+                                Header="Title"
+                                Text="{Binding CurrentTask.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox
+                                AcceptsReturn="True"
+                                Header="Description"
+                                MinHeight="70"
+                                Text="{Binding CurrentTask.Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                TextWrapping="Wrap" />
+                            <ComboBox
+                                HorizontalAlignment="Stretch"
+                                Header="Priority"
+                                ItemsSource="{Binding ColorKeys}"
+                                SelectedItem="{Binding CurrentTask.ColorKey, Mode=TwoWay}" />
+                            <ComboBox
+                                HorizontalAlignment="Stretch"
+                                Header="Reminder"
+                                ItemsSource="{Binding ReminderTimes}"
+                                SelectedItem="{Binding SelectedReminderTime, Mode=TwoWay}" />
+
+                            <muxc:Expander
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch"
+                                Header="Date information"
+                                IsExpanded="False">
+                                <StackPanel Spacing="8">
+                                    <DatePicker
+                                        Date="{Binding CurrentTask.DateCreated, Mode=OneWay}"
+                                        Header="Date created"
+                                        IsEnabled="False" />
+                                    <DatePicker Date="{Binding DueDate, Mode=TwoWay}" Header="Due date" />
+                                    <TimePicker Header="Time due" Time="{Binding TimeDue, Mode=TwoWay, Converter={StaticResource StringToTimeSpanConverter}}" />
+                                    <!-- Past-due warning (live while editing) -->
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="6"
+                                        Visibility="{Binding IsPassedDue, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <FontIcon
+                                            FontSize="12"
+                                            Foreground="Red"
+                                            Glyph="&#xE7BA;" />
+                                        <TextBlock
+                                            FontSize="12"
+                                            Foreground="Red"
+                                            Text="This task is past due" />
+                                    </StackPanel>
+                                    <DatePicker Date="{Binding StartDate, Mode=TwoWay}" Header="Start date" />
+                                    <DatePicker Date="{Binding FinishDate, Mode=TwoWay}" Header="Finish date" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="Red"
+                                        Text="Finish date is before the start date"
+                                        Visibility="{Binding IsFinishBeforeStart, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Days worked on:" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            FontWeight="SemiBold"
+                                            Text="{Binding CurrentTask.DaysWorkedOn}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Days since creation:" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            FontWeight="SemiBold"
+                                            Text="{Binding CurrentTask.DaysSinceCreation}" />
+                                    </Grid>
+                                </StackPanel>
+                            </muxc:Expander>
+
+                            <!-- Tags -->
+                            <AutoSuggestBox
+                                x:Name="autoSuggestBoxTags"
+                                GotFocus="autoSuggestBoxTags_GotFocus"
+                                Header="Tags"
+                                ItemsSource="{Binding SuggestedTagsCollection, Mode=OneWay}"
+                                PlaceholderText="Type and press Enter to add"
+                                QuerySubmitted="autoSuggestBoxTags_QuerySubmitted"
+                                SuggestionChosen="autoSuggestBoxTags_SuggestionChosen"
+                                TextChanged="autoSuggestBoxTags_TextChanged" />
+                            <ItemsControl ItemsSource="{Binding CurrentTask.Tags}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="4" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border
+                                            Padding="8,3,4,3"
+                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                            CornerRadius="10">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontSize="11"
+                                                    Text="{Binding}" />
+                                                <Button
+                                                    Padding="2"
+                                                    VerticalAlignment="Center"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Command="{Binding DataContext.DeleteTagCommand, ElementName=boardViewPage}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTipService.ToolTip="Remove tag">
+                                                    <FontIcon FontSize="9" Glyph="&#xE711;" />
+                                                </Button>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Attachments: files live in the attachments folder; only names are stored -->
+                            <TextBlock
+                                Margin="0,4,0,0"
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="Attachments" />
+                            <ItemsControl ItemsSource="{Binding CurrentTask.Attachments}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,4" ColumnSpacing="4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border
+                                                Padding="8,4"
+                                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                CornerRadius="6">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <FontIcon FontSize="12" Glyph="&#xE723;" />
+                                                    <TextBlock
+                                                        FontSize="12"
+                                                        Text="{Binding}"
+                                                        TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Button
+                                                Grid.Column="1"
+                                                Padding="5"
+                                                Click="OpenAttachment_Click"
+                                                CommandParameter="{Binding}"
+                                                Style="{ThemeResource IconButtonStyle}"
+                                                ToolTipService.ToolTip="Open">
+                                                <FontIcon FontSize="11" Glyph="&#xE8A7;" />
+                                            </Button>
+                                            <Button
+                                                Grid.Column="2"
+                                                Padding="5"
+                                                Click="RemoveAttachment_Click"
+                                                CommandParameter="{Binding}"
+                                                Style="{ThemeResource IconButtonStyle}"
+                                                ToolTipService.ToolTip="Remove link (file is kept)">
+                                                <FontIcon FontSize="11" Glyph="&#xE711;" />
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Click="AddAttachment_Click" HorizontalAlignment="Stretch">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon FontSize="13" Glyph="&#xE723;" />
+                                    <TextBlock Text="Add attachment" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Pane actions -->
+                    <StackPanel
+                        Grid.Row="2"
+                        Padding="16,8,16,16"
+                        Orientation="Horizontal"
+                        Spacing="8">
+                        <Button
+                            Command="{Binding SaveTaskCommand}"
+                            Content="Save"
+                            Style="{ThemeResource AccentButtonStyle}" />
+                        <Button Click="PaneCancelEdit_Click" Content="Cancel" />
+                        <Button Click="PaneDelete_Click" Content="Delete" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>
