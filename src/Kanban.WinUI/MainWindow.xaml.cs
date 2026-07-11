@@ -192,6 +192,8 @@ public sealed partial class MainWindow : Window
         }
         catch { }
         UpdateThemeToggleIcon();
+        Services.ThemeHelpers.ApplyCaptionButtonColors(
+            this, (Content as FrameworkElement)?.ActualTheme ?? ElementTheme.Default);
     }
 
     private void ThemeToggle_Click(object sender, RoutedEventArgs e)
@@ -207,6 +209,7 @@ public sealed partial class MainWindow : Window
         }
         catch { }
         UpdateThemeToggleIcon();
+        Services.ThemeHelpers.ApplyCaptionButtonColors(this, next);
     }
 
     private void UpdateThemeToggleIcon()
@@ -299,7 +302,8 @@ public sealed partial class MainWindow : Window
             PrimaryButtonText = "Delete",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
-            XamlRoot = Content.XamlRoot
+            XamlRoot = Content.XamlRoot,
+            RequestedTheme = Services.ThemeHelpers.CurrentTheme
         };
 
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)

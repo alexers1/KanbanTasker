@@ -21,6 +21,20 @@ namespace Kanban_WinUI.Views
             InitializeComponent();
             AppWindow.Resize(new Windows.Graphics.SizeInt32(560, 720));
 
+            // Follow the user's saved theme (and keep caption buttons visible in dark mode)
+            try
+            {
+                string themePath = System.IO.Path.Combine(App.AppDataFolder, "theme.txt");
+                if (System.IO.File.Exists(themePath) && Content is FrameworkElement fe &&
+                    Enum.TryParse<ElementTheme>(System.IO.File.ReadAllText(themePath).Trim(), out var theme))
+                {
+                    fe.RequestedTheme = theme;
+                }
+            }
+            catch { }
+            Services.ThemeHelpers.ApplyCaptionButtonColors(
+                this, (Content as FrameworkElement)?.ActualTheme ?? ElementTheme.Default);
+
             var cfg = initial ?? new DatabaseConfig();
             ServerBox.Text = cfg.Server;
             DatabaseBox.Text = cfg.Database;

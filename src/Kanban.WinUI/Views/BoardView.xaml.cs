@@ -48,7 +48,8 @@ namespace Kanban_WinUI.Views
                 PrimaryButtonText = "Create Column",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = this.XamlRoot
+                XamlRoot = this.XamlRoot,
+                RequestedTheme = Services.ThemeHelpers.CurrentTheme
             };
 
             var result = await dialog.ShowAsync();
@@ -147,7 +148,8 @@ namespace Kanban_WinUI.Views
                     PrimaryButtonText = "Yes, delete this task",
                     CloseButtonText = "Cancel",
                     DefaultButton = ContentDialogButton.Close,
-                    XamlRoot = this.XamlRoot  // required for WinUI3 ContentDialog
+                    XamlRoot = this.XamlRoot,
+                    RequestedTheme = Services.ThemeHelpers.CurrentTheme
                 };
                 var result = await dialog.ShowAsync();
                 if (result == ContentDialogResult.Primary && ViewModel != null)
@@ -181,7 +183,8 @@ namespace Kanban_WinUI.Views
                 PrimaryButtonText = "Yes, delete this",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close,
-                XamlRoot = this.XamlRoot
+                XamlRoot = this.XamlRoot,
+                RequestedTheme = Services.ThemeHelpers.CurrentTheme
             };
             var result = await dialog.ShowAsync();
             if (result == ContentDialogResult.Primary)
@@ -223,7 +226,8 @@ namespace Kanban_WinUI.Views
                     PrimaryButtonText = "Yes, delete",
                     CloseButtonText = "Cancel",
                     DefaultButton = ContentDialogButton.Close,
-                    XamlRoot = this.XamlRoot
+                    XamlRoot = this.XamlRoot,
+                    RequestedTheme = Services.ThemeHelpers.CurrentTheme
                 };
                 var result = await dialog.ShowAsync();
                 if (result == ContentDialogResult.Primary && ViewModel != null)

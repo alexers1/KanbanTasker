@@ -29,6 +29,10 @@ namespace Kanban_WinUI.Services
             if (dialog.XamlRoot == null)
                 return;
 
+            // Dialogs do not follow runtime theme changes on their own — without this
+            // they stay light after the user switches the app to dark mode.
+            dialog.RequestedTheme = ThemeHelpers.CurrentTheme;
+
             _isDialogOpen = true;
             try
             {
