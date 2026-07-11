@@ -8,13 +8,18 @@
     CornerRadius="8"
     mc:Ignorable="d">
 
-    <Grid Width="460" RowSpacing="14">
+    <ContentDialog.Resources>
+        <x:Double x:Key="ContentDialogMaxWidth">900</x:Double>
+        <x:Double x:Key="ContentDialogMaxHeight">760</x:Double>
+    </ContentDialog.Resources>
+
+    <Grid
+        Width="780"
+        Height="520"
+        RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <!-- Header -->
@@ -35,135 +40,200 @@
             </Button>
         </Grid>
 
-        <!-- Database backup -->
-        <StackPanel
-            Grid.Row="1"
-            Padding="14"
-            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="8"
-            Spacing="8">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <FontIcon Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Glyph="&#xE78C;" />
-                <TextBlock FontWeight="SemiBold" Text="Database backup" />
-            </StackPanel>
-            <TextBlock
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Export a full SQL Server backup (.bak) of your boards and tasks to a file of your choice. Restore it later with SQL Server Management Studio or RESTORE DATABASE."
-                TextWrapping="Wrap" />
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <Button
-                    x:Name="BtnBackup"
-                    Click="BtnBackup_Click"
-                    Style="{ThemeResource AccentButtonStyle}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon FontSize="14" Glyph="&#xE74E;" />
-                        <TextBlock Text="Export backup…" />
+        <!-- Body: categories left, detail right -->
+        <Grid Grid.Row="1" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="210" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <ListView
+                x:Name="CategoryList"
+                Padding="0,4"
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                SelectionChanged="CategoryList_SelectionChanged"
+                SelectionMode="Single">
+                <ListViewItem Tag="DataSaving">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon FontSize="14" Glyph="&#xE968;" />
+                        <TextBlock Text="Data saving" />
                     </StackPanel>
-                </Button>
-                <Button x:Name="BtnImport" Click="BtnImport_Click">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon FontSize="14" Glyph="&#xE8B5;" />
-                        <TextBlock Text="Import backup…" />
+                </ListViewItem>
+                <ListViewItem Tag="Backup">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon FontSize="14" Glyph="&#xE78C;" />
+                        <TextBlock Text="Backup &amp; import" />
                     </StackPanel>
-                </Button>
-                <ProgressRing
-                    Width="22"
-                    Height="22"
-                    IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
-            </StackPanel>
-            <TextBlock
-                FontSize="12"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Import restores a .bak (from SQL Server or Express) into a separate staging database, then adds its boards next to yours — existing data is never overwritten or deleted."
-                TextWrapping="Wrap" />
-            <TextBlock
-                FontSize="12"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
-                TextWrapping="Wrap" />
-        </StackPanel>
+                </ListViewItem>
+                <ListViewItem Tag="Storage">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon FontSize="14" Glyph="&#xE7B8;" />
+                        <TextBlock Text="Storage" />
+                    </StackPanel>
+                </ListViewItem>
+                <ListViewItem Tag="Attachments">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon FontSize="14" Glyph="&#xE723;" />
+                        <TextBlock Text="Attachments" />
+                    </StackPanel>
+                </ListViewItem>
+                <ListViewItem Tag="About">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon FontSize="14" Glyph="&#xE946;" />
+                        <TextBlock Text="About" />
+                    </StackPanel>
+                </ListViewItem>
+            </ListView>
 
-        <!-- Storage: Express size limit + archive strategy -->
-        <StackPanel
-            Grid.Row="2"
-            Padding="14"
-            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="8"
-            Spacing="8">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <FontIcon Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Glyph="&#xE968;" />
-                <TextBlock FontWeight="SemiBold" Text="Storage" />
-            </StackPanel>
-            <TextBlock
-                FontSize="12"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="{x:Bind ViewModel.DatabaseInfo}" />
-            <ProgressBar Maximum="100" Value="{x:Bind ViewModel.UsagePercent, Mode=OneWay}" />
-            <TextBlock
-                FontSize="12"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="{x:Bind ViewModel.UsageText, Mode=OneWay}"
-                TextWrapping="Wrap" />
-            <Button Click="BtnArchive_Click" Content="Archive completed tasks" />
-            <TextBlock
-                FontSize="12"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="{x:Bind ViewModel.ArchiveStatusText, Mode=OneWay}"
-                TextWrapping="Wrap" />
-        </StackPanel>
+            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                <Grid>
+                    <!-- ============ Data saving: SQL Server connection ============ -->
+                    <StackPanel x:Name="PanelDataSaving" Spacing="10">
+                        <TextBlock FontWeight="SemiBold" Text="SQL Server connection" />
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="Where your boards are stored. Changes are verified before they are saved to appsettings.json; the app switches to the new database when Settings closes."
+                            TextWrapping="Wrap" />
+                        <TextBox x:Name="CfgServerBox" Header="Server" />
+                        <TextBox x:Name="CfgDatabaseBox" Header="Database" />
+                        <ToggleSwitch
+                            x:Name="CfgWindowsAuthToggle"
+                            Header="Authentication"
+                            OffContent="SQL Server login"
+                            OnContent="Windows authentication"
+                            Toggled="CfgWindowsAuthToggle_Toggled" />
+                        <TextBox x:Name="CfgUserBox" Header="User name" />
+                        <PasswordBox
+                            x:Name="CfgPasswordBox"
+                            Header="Password"
+                            PasswordRevealMode="Peek" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button
+                                Click="BtnTestSaveConnection_Click"
+                                Style="{ThemeResource AccentButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon FontSize="14" Glyph="&#xE8CE;" />
+                                    <TextBlock Text="Test and save" />
+                                </StackPanel>
+                            </Button>
+                            <ProgressRing
+                                Width="22"
+                                Height="22"
+                                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                        </StackPanel>
+                        <TextBlock
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Text="{x:Bind ViewModel.ConnectionStatusText, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
 
-        <!-- Attachments folder -->
-        <StackPanel
-            Grid.Row="3"
-            Padding="14"
-            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="8"
-            Spacing="8">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <FontIcon Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Glyph="&#xE723;" />
-                <TextBlock FontWeight="SemiBold" Text="Attachments" />
-            </StackPanel>
-            <TextBlock
-                FontSize="12"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Attachment files are kept in this folder — the database stores only their names, so it stays small and moving computers is just copying this folder (a network share like \\server\kanban works too)."
-                TextWrapping="Wrap" />
-            <TextBlock
-                FontSize="12"
-                FontWeight="SemiBold"
-                Text="{x:Bind ViewModel.AttachmentsRoot, Mode=OneWay}"
-                TextWrapping="Wrap" />
-            <Button Click="BtnMigrateAttachments_Click" Content="Move to another folder…" />
-            <TextBlock
-                FontSize="12"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="{x:Bind ViewModel.AttachmentStatusText, Mode=OneWay}"
-                TextWrapping="Wrap" />
-        </StackPanel>
+                    <!-- ============ Backup & import ============ -->
+                    <StackPanel
+                        x:Name="PanelBackup"
+                        Spacing="10"
+                        Visibility="Collapsed">
+                        <TextBlock FontWeight="SemiBold" Text="Database backup" />
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="Export a full SQL Server backup (.bak) of your boards and tasks, or import a .bak made by this app or any SQL Server. Import restores into a separate staging database, then adds its boards next to yours — existing data is never overwritten or deleted."
+                            TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button
+                                x:Name="BtnBackup"
+                                Click="BtnBackup_Click"
+                                Style="{ThemeResource AccentButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon FontSize="14" Glyph="&#xE74E;" />
+                                    <TextBlock Text="Export backup…" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="BtnImport" Click="BtnImport_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon FontSize="14" Glyph="&#xE8B5;" />
+                                    <TextBlock Text="Import backup…" />
+                                </StackPanel>
+                            </Button>
+                            <ProgressRing
+                                Width="22"
+                                Height="22"
+                                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                        </StackPanel>
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
 
-        <!-- About -->
-        <StackPanel
-            Grid.Row="4"
-            Padding="14"
-            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="8"
-            Spacing="4">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <FontIcon Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Glyph="&#xE946;" />
-                <TextBlock FontWeight="SemiBold" Text="About" />
-            </StackPanel>
-            <TextBlock
-                FontSize="12"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Kanban Tasker — personal kanban boards. WinUI 3, .NET 10, SQL Server Express." />
-        </StackPanel>
+                    <!-- ============ Storage ============ -->
+                    <StackPanel
+                        x:Name="PanelStorage"
+                        Spacing="10"
+                        Visibility="Collapsed">
+                        <TextBlock FontWeight="SemiBold" Text="Storage" />
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="{x:Bind ViewModel.DatabaseInfo, Mode=OneWay}" />
+                        <ProgressBar Maximum="100" Value="{x:Bind ViewModel.UsagePercent, Mode=OneWay}" />
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="{x:Bind ViewModel.UsageText, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                        <Button Click="BtnArchive_Click" Content="Archive completed tasks" />
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="{x:Bind ViewModel.ArchiveStatusText, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- ============ Attachments ============ -->
+                    <StackPanel
+                        x:Name="PanelAttachments"
+                        Spacing="10"
+                        Visibility="Collapsed">
+                        <TextBlock FontWeight="SemiBold" Text="Attachments" />
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="Attachment files are kept in this folder — the database stores only their names, so it stays small and moving computers is just copying this folder (a network share like \\server\kanban works too)."
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Text="{x:Bind ViewModel.AttachmentsRoot, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                        <Button Click="BtnMigrateAttachments_Click" Content="Move to another folder…" />
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="{x:Bind ViewModel.AttachmentStatusText, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- ============ About ============ -->
+                    <StackPanel
+                        x:Name="PanelAbout"
+                        Spacing="10"
+                        Visibility="Collapsed">
+                        <TextBlock FontWeight="SemiBold" Text="About" />
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="Kanban Tasker — personal kanban boards. WinUI 3, .NET 10, SQL Server / SQL Server Express."
+                            TextWrapping="Wrap" />
+                        <HyperlinkButton Content="github.com/alexers1/KanbanTasker" NavigateUri="https://github.com/alexers1/KanbanTasker" />
+                    </StackPanel>
+                </Grid>
+            </ScrollViewer>
+        </Grid>
     </Grid>
 </ContentDialog>

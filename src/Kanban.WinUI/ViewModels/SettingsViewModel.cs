@@ -41,6 +41,56 @@ namespace Kanban_WinUI.ViewModels
             ? $"SQL Server — {c.Server}, database {c.Database}"
             : "SQL Server";
 
+        [ObservableProperty]
+        private string _connectionStatusText = "";
+
+        /// <summary>Tests the currently active configuration (for the Data saving page).</summary>
+        public async Task LoadConnectionStatusAsync()
+        {
+            var cfg = KanbanTasker.Services.DatabaseConfig.Current;
+            if (cfg == null)
+            {
+                ConnectionStatusText = "Status: not configured";
+                return;
+            }
+            ConnectionStatusText = "Status: checking connection…";
+            string? error = await Task.Run(cfg.TestConnection);
+            ConnectionStatusText = error == null
+                ? "Status: connected ✔"
+                : "Status: NOT connected — " + error;
+        }
+
+        /// <summary>
+        /// Verifies new connection settings; on success saves appsettings.json and
+        /// switches the running app to them (boards reload when Settings closes).
+        /// </summary>
+        public async Task<bool> TestAndSaveConnectionAsync(KanbanTasker.Services.DatabaseConfig cfg)
+        {
+            IsBusy = true;
+            ConnectionStatusText = "Status: testing new settings…";
+            try
+            {
+                string? error = await Task.Run(cfg.TestConnection);
+                if (error != null)
+                {
+                    ConnectionStatusText = "Status: connection failed — " + error;
+                    return false;
+                }
+
+                cfg.Save();
+                KanbanTasker.Services.DatabaseConfig.Current = cfg;
+                KanbanTasker.Services.ServiceCollectionExtensions.ConnectionString = cfg.BuildConnectionString();
+                OnPropertyChanged(nameof(DatabaseInfo));
+                ConnectionStatusText = "Status: connected ✔ — saved. Boards reload when Settings closes.";
+                await LoadUsageAsync();
+                return true;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
         public SettingsViewModel(IDatabaseServices databaseServices, AttachmentService attachmentService)
         {
             _databaseServices = databaseServices;

@@ -1,6 +1,7 @@
 using System;
 using Kanban_WinUI.ViewModels;
 using KanbanTasker.Model.Services;
+using KanbanTasker.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage.Pickers;
@@ -8,7 +9,9 @@ using Windows.Storage.Pickers;
 namespace Kanban_WinUI.Views.Dialogs
 {
     /// <summary>
-    /// Settings: export a SQL Server backup (.bak) of the database to a chosen file.
+    /// Settings with categories on the left and details on the right:
+    /// Data saving (SQL Server connection), Backup &amp; import, Storage,
+    /// Attachments, About.
     /// </summary>
     public sealed partial class SettingsDialog : ContentDialog
     {
@@ -22,6 +25,31 @@ namespace Kanban_WinUI.Views.Dialogs
                 App.GetService<IDatabaseServices>(),
                 App.GetService<Kanban_WinUI.Services.AttachmentService>());
             DataContext = ViewModel;
+
+            // Data saving page: prefill from the active configuration + show live status
+            var cfg = DatabaseConfig.Current;
+            if (cfg != null)
+            {
+                CfgServerBox.Text = cfg.Server;
+                CfgDatabaseBox.Text = cfg.Database;
+                CfgWindowsAuthToggle.IsOn = cfg.IntegratedSecurity;
+                CfgUserBox.Text = cfg.UserId;
+                CfgPasswordBox.Password = cfg.Password;
+            }
+            UpdateAuthFields();
+            _ = ViewModel.LoadConnectionStatusAsync();
+
+            CategoryList.SelectedIndex = 0;
+        }
+
+        private void CategoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            string tag = (CategoryList.SelectedItem as ListViewItem)?.Tag?.ToString() ?? "DataSaving";
+            PanelDataSaving.Visibility = tag == "DataSaving" ? Visibility.Visible : Visibility.Collapsed;
+            PanelBackup.Visibility = tag == "Backup" ? Visibility.Visible : Visibility.Collapsed;
+            PanelStorage.Visibility = tag == "Storage" ? Visibility.Visible : Visibility.Collapsed;
+            PanelAttachments.Visibility = tag == "Attachments" ? Visibility.Visible : Visibility.Collapsed;
+            PanelAbout.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void BtnCloseSettings_Click(object sender, RoutedEventArgs e)
@@ -29,41 +57,35 @@ namespace Kanban_WinUI.Views.Dialogs
             Hide();
         }
 
-        private async void BtnImport_Click(object sender, RoutedEventArgs e)
+        // === Data saving: SQL Server connection ===
+
+        private void CfgWindowsAuthToggle_Toggled(object sender, RoutedEventArgs e) => UpdateAuthFields();
+
+        private void UpdateAuthFields()
         {
-            if (ViewModel.IsBusy || App.MainAppWindow == null)
+            bool sqlAuth = !CfgWindowsAuthToggle.IsOn;
+            CfgUserBox.IsEnabled = sqlAuth;
+            CfgPasswordBox.IsEnabled = sqlAuth;
+        }
+
+        private async void BtnTestSaveConnection_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel.IsBusy)
                 return;
 
-            var picker = new Windows.Storage.Pickers.FileOpenPicker();
-            picker.FileTypeFilter.Add(".bak");
-            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainAppWindow);
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+            var cfg = new DatabaseConfig
+            {
+                Server = string.IsNullOrWhiteSpace(CfgServerBox.Text) ? @".\SQLEXPRESS" : CfgServerBox.Text.Trim(),
+                Database = string.IsNullOrWhiteSpace(CfgDatabaseBox.Text) ? "KanbanTasker" : CfgDatabaseBox.Text.Trim(),
+                IntegratedSecurity = CfgWindowsAuthToggle.IsOn,
+                UserId = CfgUserBox.Text.Trim(),
+                Password = CfgPasswordBox.Password
+            };
 
-            var file = await picker.PickSingleFileAsync();
-            if (file != null)
-                await ViewModel.ImportFromAsync(file.Path);
+            await ViewModel.TestAndSaveConnectionAsync(cfg);
         }
 
-        private async void BtnArchive_Click(object sender, RoutedEventArgs e)
-        {
-            if (!ViewModel.IsBusy)
-                await ViewModel.ArchiveCompletedAsync();
-        }
-
-        private async void BtnMigrateAttachments_Click(object sender, RoutedEventArgs e)
-        {
-            if (ViewModel.IsBusy || App.MainAppWindow == null)
-                return;
-
-            var picker = new Windows.Storage.Pickers.FolderPicker();
-            picker.FileTypeFilter.Add("*");
-            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainAppWindow);
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
-
-            var folder = await picker.PickSingleFolderAsync();
-            if (folder != null)
-                await ViewModel.MigrateAttachmentsAsync(folder.Path);
-        }
+        // === Backup & import ===
 
         private async void BtnBackup_Click(object sender, RoutedEventArgs e)
         {
@@ -75,15 +97,52 @@ namespace Kanban_WinUI.Views.Dialogs
             picker.SuggestedFileName = $"KanbanTasker_{DateTime.Now:yyyy-MM-dd}";
             picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
 
-            // WinUI 3 desktop: pickers must be bound to the window handle
             var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainAppWindow);
             WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
 
             var file = await picker.PickSaveFileAsync();
-            if (file == null)
+            if (file != null)
+                await ViewModel.BackupToAsync(file.Path);
+        }
+
+        private async void BtnImport_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel.IsBusy || App.MainAppWindow == null)
                 return;
 
-            await ViewModel.BackupToAsync(file.Path);
+            var picker = new FileOpenPicker();
+            picker.FileTypeFilter.Add(".bak");
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainAppWindow);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+            var file = await picker.PickSingleFileAsync();
+            if (file != null)
+                await ViewModel.ImportFromAsync(file.Path);
+        }
+
+        // === Storage ===
+
+        private async void BtnArchive_Click(object sender, RoutedEventArgs e)
+        {
+            if (!ViewModel.IsBusy)
+                await ViewModel.ArchiveCompletedAsync();
+        }
+
+        // === Attachments ===
+
+        private async void BtnMigrateAttachments_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel.IsBusy || App.MainAppWindow == null)
+                return;
+
+            var picker = new FolderPicker();
+            picker.FileTypeFilter.Add("*");
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainAppWindow);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder != null)
+                await ViewModel.MigrateAttachmentsAsync(folder.Path);
         }
     }
 }
