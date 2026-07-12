@@ -24,9 +24,13 @@
 
         <!-- Modern WinUI3 TitleBar (content extends into it so Mica flows through the whole window) -->
         <TitleBar x:Name="AppTitleBar" Title="Kanban Tasker" Subtitle="WinUI 3">
-            <TitleBar.IconSource>
-                <ImageIconSource ImageSource="Assets/AppIcon.ico" />
-            </TitleBar.IconSource>
+            <TitleBar.LeftHeader>
+                <Image x:Name="TitleBarIcon"
+                       Width="20"
+                       Height="20"
+                       Margin="4,0,0,0"
+                       VerticalAlignment="Center" />
+            </TitleBar.LeftHeader>
             <TitleBar.RightHeader>
                 <StackPanel Orientation="Horizontal" Spacing="2">
                     <Button x:Name="CompactOverlayButton"

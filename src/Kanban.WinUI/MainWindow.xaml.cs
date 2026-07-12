@@ -35,7 +35,18 @@ public sealed partial class MainWindow : Window
         ApplySavedTheme();
         App.AppendStartupLog("MainWindow: Custom titlebar enabled, theme applied");
 
-        try { AppWindow.SetIcon("Assets/AppIcon.ico"); } catch { }
+        // Absolute paths: relative ones break when the app is launched from another directory.
+        // The multi-size .ico lets Windows pick the exact resolution per DPI (taskbar, alt-tab);
+        // the title-bar Image uses the 512px PNG downscaled by the compositor (crisp at any DPI).
+        try { AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico")); }
+        catch (Exception ex) { App.AppendStartupLog("SetIcon failed: " + ex.Message); }
+        try
+        {
+            string iconPng = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.png");
+            App.AppendStartupLog($"TitleBar icon: exists={System.IO.File.Exists(iconPng)} path={iconPng}");
+            TitleBarIcon.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(iconPng));
+        }
+        catch (Exception ex) { App.AppendStartupLog("TitleBar icon failed: " + ex.Message); }
         App.AppendStartupLog("MainWindow: Icon set (or skipped)");
 
         // Resolve services - wrapped to prevent ctor failure in direct exe (no identity) scenarios
