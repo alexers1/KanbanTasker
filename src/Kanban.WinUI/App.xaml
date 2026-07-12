@@ -24,7 +24,13 @@
                     <!-- Liquid glass, balanced like the Sedela dashboard reference: warm dark
                          panels that stay readable, transparency as a hint, subtle specular edge.
                          Plain translucent fills = cheap; the only blur is the window backdrop. -->
-                    <SolidColorBrush x:Key="GlassSurfaceBrush" Color="#221E1C" Opacity="0.72" />
+                    <!-- Real WinUI AcrylicBrush: in-app blur layer with luminosity blend,
+                         so panels read as physical glass over the window backdrop -->
+                    <AcrylicBrush x:Key="GlassSurfaceBrush"
+                                  TintColor="#221E1C"
+                                  TintOpacity="0.50"
+                                  TintLuminosityOpacity="0.72"
+                                  FallbackColor="#262220" />
                     <SolidColorBrush x:Key="GlassCardBrush" Color="#FFFFFF" Opacity="0.10" />
                     <LinearGradientBrush x:Key="GlassEdgeBrush" StartPoint="0,0" EndPoint="0,1">
                         <GradientStop Offset="0" Color="#3EFFFFFF" />
@@ -37,7 +43,11 @@
                                   TintOpacity="0.8"
                                   FallbackColor="#FCFCFC" />
                     <SolidColorBrush x:Key="RegionBrush" Color="#F3F3F3" />
-                    <SolidColorBrush x:Key="GlassSurfaceBrush" Color="#FBFAF9" Opacity="0.65" />
+                    <AcrylicBrush x:Key="GlassSurfaceBrush"
+                                  TintColor="#FBFAF9"
+                                  TintOpacity="0.45"
+                                  TintLuminosityOpacity="0.80"
+                                  FallbackColor="#F5F3F2" />
                     <SolidColorBrush x:Key="GlassCardBrush" Color="#FFFFFF" Opacity="0.72" />
                     <LinearGradientBrush x:Key="GlassEdgeBrush" StartPoint="0,0" EndPoint="0,1">
                         <GradientStop Offset="0" Color="#E8FFFFFF" />
