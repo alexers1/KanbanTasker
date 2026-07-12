@@ -19,6 +19,12 @@ namespace Kanban_WinUI.Views
             taskFlyout.Opening += TaskFlyout_Opening;
         }
 
+        // Visual Layer + Win2D liquid glass behind columns and the edit pane
+        private void GlassLayer_Loaded(object sender, RoutedEventArgs e)
+        {
+            Services.LiquidGlass.Attach((FrameworkElement)sender);
+        }
+
         protected override void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);

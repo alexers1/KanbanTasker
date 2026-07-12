@@ -313,7 +313,7 @@
                             <!-- Column: a fluent "layer" surface over Mica; collapses to a narrow strip -->
                             <Border
                                 Width="{Binding IsCollapsed, Converter={StaticResource ColumnWidthConverter}}"
-                                Background="{ThemeResource GlassSurfaceBrush}"
+                                Background="Transparent"
                                 BorderBrush="{ThemeResource GlassEdgeBrush}"
                                 BorderThickness="1"
                                 CornerRadius="8">
@@ -322,6 +322,9 @@
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="*" />
                                     </Grid.RowDefinitions>
+
+                                    <!-- Visual Layer liquid glass (blur+saturation sprite behind content) -->
+                                    <Border Grid.RowSpan="2" Loaded="GlassLayer_Loaded" />
 
                                     <!-- Collapsed strip: expand button + count + rotated name -->
                                     <Grid
@@ -484,7 +487,7 @@
                 Grid.Column="1"
                 Width="340"
                 Margin="12,0,0,0"
-                Background="{ThemeResource GlassSurfaceBrush}"
+                Background="Transparent"
                 BorderBrush="{ThemeResource GlassEdgeBrush}"
                 BorderThickness="1"
                 CornerRadius="8"
@@ -500,6 +503,8 @@
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
+
+                    <Border Grid.RowSpan="3" Loaded="GlassLayer_Loaded" />
 
                     <!-- Pane header -->
                     <Grid Padding="16,12,8,4">
