@@ -3,6 +3,7 @@ using System.Numerics;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Effects;
 using Microsoft.UI.Composition;
+using Microsoft.UI.Composition.Effects;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Hosting;
 using Windows.UI;
@@ -10,19 +11,49 @@ using Windows.UI;
 namespace Kanban_WinUI.Services
 {
     /// <summary>
-    /// Real liquid glass on the Visual Layer: a per-panel SpriteVisual whose brush is a
-    /// Win2D effect graph — backdrop capture → gaussian blur → saturation boost (the
-    /// "liquid" refraction feel) → theme tint composite — clipped to rounded corners.
-    /// Runs entirely on the compositor thread, so it stays smooth during scrolling
-    /// and drag &amp; drop. Adapts automatically to light/dark theme changes.
+    /// True liquid glass on the Visual Layer + Win2D:
+    ///  - per-panel SpriteVisual with an effect graph: backdrop capture → gaussian blur →
+    ///    saturation boost (refraction "juice") → warm theme tint composite
+    ///  - a compositor PointLight that follows the pointer, feeding a SceneLightingEffect
+    ///    specular layer inside the same graph — the glass GLINTS as the mouse moves,
+    ///    which is the behavior that separates liquid glass from plain acrylic
+    ///  - rounded-rect geometric clip; everything runs on the compositor thread
+    ///  - re-applies on theme change (light/dark tints) and resize; XAML brushes remain
+    ///    as fallback when the effect graph is unavailable.
     /// </summary>
     public static class LiquidGlass
     {
+        private static PointLight? _light;
+
         public static void Attach(FrameworkElement host, float cornerRadius = 8f)
         {
             Apply(host, cornerRadius);
             host.ActualThemeChanged += (_, _) => Apply(host, cornerRadius);
             host.SizeChanged += (_, _) => Apply(host, cornerRadius);
+        }
+
+        /// <summary>Call once on the page root: the glint light follows the pointer.</summary>
+        public static void AttachPointerGlint(FrameworkElement root)
+        {
+            try
+            {
+                var rootVisual = ElementCompositionPreview.GetElementVisual(root);
+                var compositor = rootVisual.Compositor;
+
+                _light = compositor.CreatePointLight();
+                _light.CoordinateSpace = rootVisual;
+                _light.Color = Microsoft.UI.Colors.White;
+                _light.Intensity = 1.4f;
+                _light.Offset = new Vector3(400, 200, 220);
+
+                root.PointerMoved += (s, e) =>
+                {
+                    var p = e.GetCurrentPoint(root).Position;
+                    if (_light != null)
+                        _light.Offset = new Vector3((float)p.X, (float)p.Y, 220);
+                };
+            }
+            catch { /* lighting unavailable - glass still renders without glint */ }
         }
 
         private static void Apply(FrameworkElement host, float cornerRadius)
@@ -35,25 +66,40 @@ namespace Kanban_WinUI.Services
                 var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
                 bool dark = host.ActualTheme == ElementTheme.Dark;
                 var tint = dark
-                    ? Color.FromArgb(0xAE, 0x22, 0x1E, 0x1C)   // warm dark glass
-                    : Color.FromArgb(0x9C, 0xFB, 0xFA, 0xF9);  // warm light glass
+                    ? Color.FromArgb(0xA8, 0x22, 0x1E, 0x1C)   // warm dark glass
+                    : Color.FromArgb(0x96, 0xFB, 0xFA, 0xF9);  // warm light glass
 
                 var graph = new CompositeEffect
                 {
-                    Mode = CanvasComposite.SourceOver,
+                    Mode = CanvasComposite.Add,   // specular light ADDS on top of the glass
                     Sources =
                     {
-                        new SaturationEffect
+                        new CompositeEffect
                         {
-                            Saturation = 1.35f,
-                            Source = new GaussianBlurEffect
+                            Mode = CanvasComposite.SourceOver,
+                            Sources =
                             {
-                                BlurAmount = 20f,
-                                BorderMode = EffectBorderMode.Hard,
-                                Source = new CompositionEffectSourceParameter("backdrop")
+                                new SaturationEffect
+                                {
+                                    Saturation = 1.4f,
+                                    Source = new GaussianBlurEffect
+                                    {
+                                        BlurAmount = 26f,
+                                        BorderMode = EffectBorderMode.Hard,
+                                        Source = new CompositionEffectSourceParameter("backdrop")
+                                    }
+                                },
+                                new ColorSourceEffect { Color = tint }
                             }
                         },
-                        new ColorSourceEffect { Color = tint }
+                        // Pointer-following specular sheen (lit by the PointLight)
+                        new SceneLightingEffect
+                        {
+                            AmbientAmount = 0f,
+                            DiffuseAmount = 0.06f,
+                            SpecularAmount = 0.45f,
+                            SpecularShine = 42f
+                        }
                     }
                 };
 
@@ -70,10 +116,12 @@ namespace Kanban_WinUI.Services
                 sprite.Clip = compositor.CreateGeometricClip(rounded);
 
                 ElementCompositionPreview.SetElementChildVisual(host, sprite);
+
+                _light?.Targets.Add(sprite);   // this panel glints under the pointer light
             }
             catch
             {
-                // Effect graph unavailable (very old GPU/driver): the XAML brushes remain as fallback
+                // Effect graph unavailable (very old GPU/driver): XAML brushes remain as fallback
             }
         }
     }
