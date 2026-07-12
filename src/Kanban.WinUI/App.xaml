@@ -21,13 +21,14 @@
                                   TintOpacity="0.8"
                                   FallbackColor="#1F1F1F" />
                     <SolidColorBrush x:Key="RegionBrush" Color="#202020" />
-                    <!-- Liquid glass: translucent surfaces so the blurred backdrop shows through,
-                         plus a specular top-edge highlight like Apple's glass panels -->
-                    <SolidColorBrush x:Key="GlassSurfaceBrush" Color="#2E2E2E" Opacity="0.55" />
-                    <SolidColorBrush x:Key="GlassCardBrush" Color="#FFFFFF" Opacity="0.08" />
+                    <!-- Liquid glass, balanced like the Sedela dashboard reference: warm dark
+                         panels that stay readable, transparency as a hint, subtle specular edge.
+                         Plain translucent fills = cheap; the only blur is the window backdrop. -->
+                    <SolidColorBrush x:Key="GlassSurfaceBrush" Color="#221E1C" Opacity="0.72" />
+                    <SolidColorBrush x:Key="GlassCardBrush" Color="#FFFFFF" Opacity="0.10" />
                     <LinearGradientBrush x:Key="GlassEdgeBrush" StartPoint="0,0" EndPoint="0,1">
-                        <GradientStop Offset="0" Color="#55FFFFFF" />
-                        <GradientStop Offset="1" Color="#18FFFFFF" />
+                        <GradientStop Offset="0" Color="#3EFFFFFF" />
+                        <GradientStop Offset="1" Color="#14FFFFFF" />
                     </LinearGradientBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Light">
@@ -36,11 +37,11 @@
                                   TintOpacity="0.8"
                                   FallbackColor="#FCFCFC" />
                     <SolidColorBrush x:Key="RegionBrush" Color="#F3F3F3" />
-                    <SolidColorBrush x:Key="GlassSurfaceBrush" Color="#FFFFFF" Opacity="0.45" />
-                    <SolidColorBrush x:Key="GlassCardBrush" Color="#FFFFFF" Opacity="0.60" />
+                    <SolidColorBrush x:Key="GlassSurfaceBrush" Color="#FBFAF9" Opacity="0.65" />
+                    <SolidColorBrush x:Key="GlassCardBrush" Color="#FFFFFF" Opacity="0.72" />
                     <LinearGradientBrush x:Key="GlassEdgeBrush" StartPoint="0,0" EndPoint="0,1">
-                        <GradientStop Offset="0" Color="#D0FFFFFF" />
-                        <GradientStop Offset="1" Color="#25000000" />
+                        <GradientStop Offset="0" Color="#E8FFFFFF" />
+                        <GradientStop Offset="1" Color="#1E000000" />
                     </LinearGradientBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
