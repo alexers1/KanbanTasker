@@ -36,6 +36,8 @@
                         <GradientStop Offset="0" Color="#26FFFFFF" />
                         <GradientStop Offset="1" Color="#12FFFFFF" />
                     </LinearGradientBrush>
+                    <RadialGradientBrush x:Key="AmbientGlowPrimaryBrush"><GradientStop Offset="0" Color="#80C7341D" /><GradientStop Offset="1" Color="#00C7341D" /></RadialGradientBrush>
+                    <RadialGradientBrush x:Key="AmbientGlowSecondaryBrush"><GradientStop Offset="0" Color="#524A1E11" /><GradientStop Offset="1" Color="#004A1E11" /></RadialGradientBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Light">
                     <AcrylicBrush x:Key="PaneBackgroundAcrylicBrush"
@@ -53,6 +55,8 @@
                         <GradientStop Offset="0" Color="#E8FFFFFF" />
                         <GradientStop Offset="1" Color="#1E000000" />
                     </LinearGradientBrush>
+                    <RadialGradientBrush x:Key="AmbientGlowPrimaryBrush"><GradientStop Offset="0" Color="#38E8663C" /><GradientStop Offset="1" Color="#00E8663C" /></RadialGradientBrush>
+                    <RadialGradientBrush x:Key="AmbientGlowSecondaryBrush"><GradientStop Offset="0" Color="#2AD9A05B" /><GradientStop Offset="1" Color="#00D9A05B" /></RadialGradientBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
                     <SolidColorBrush x:Key="PaneBackgroundAcrylicBrush" Color="{ThemeResource SystemColorWindowColor}" />
