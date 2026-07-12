@@ -60,6 +60,8 @@
                     <SolidColorBrush x:Key="GlassSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
                     <SolidColorBrush x:Key="GlassCardBrush" Color="{ThemeResource SystemColorWindowColor}" />
                     <SolidColorBrush x:Key="GlassEdgeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="AmbientGlowPrimaryBrush" Color="Transparent" />
+                    <SolidColorBrush x:Key="AmbientGlowSecondaryBrush" Color="Transparent" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 

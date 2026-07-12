@@ -56,12 +56,8 @@
         -->
         <!-- Ambient color field (reference-style warm glow) that the frosted panels blur through -->
         <Grid Grid.Row="1" IsHitTestVisible="False">
-            <Ellipse Width="950" Height="750" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-280,-280" Opacity="0.5">
-                <Ellipse.Fill><RadialGradientBrush><GradientStop Offset="0" Color="#C7341D" /><GradientStop Offset="1" Color="#00C7341D" /></RadialGradientBrush></Ellipse.Fill>
-            </Ellipse>
-            <Ellipse Width="750" Height="620" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-220,-160,0,0" Opacity="0.32">
-                <Ellipse.Fill><RadialGradientBrush><GradientStop Offset="0" Color="#4A1E11" /><GradientStop Offset="1" Color="#004A1E11" /></RadialGradientBrush></Ellipse.Fill>
-            </Ellipse>
+            <Ellipse Width="950" Height="750" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-280,-280" Fill="{ThemeResource AmbientGlowPrimaryBrush}" />
+            <Ellipse Width="750" Height="620" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-220,-160,0,0" Fill="{ThemeResource AmbientGlowSecondaryBrush}" />
         </Grid>
 
         <NavigationView x:Name="NavView"
