@@ -9,14 +9,11 @@
     mc:Ignorable="d">
 
     <ContentDialog.Resources>
-        <x:Double x:Key="ContentDialogMaxWidth">900</x:Double>
-        <x:Double x:Key="ContentDialogMaxHeight">760</x:Double>
+        <x:Double x:Key="ContentDialogMaxWidth">740</x:Double>
+        <x:Double x:Key="ContentDialogMaxHeight">640</x:Double>
     </ContentDialog.Resources>
 
-    <Grid
-        Width="780"
-        Height="520"
-        RowSpacing="12">
+    <Grid Width="660" RowSpacing="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -40,10 +37,16 @@
             </Button>
         </Grid>
 
-        <!-- Body: categories left, detail right -->
-        <Grid Grid.Row="1" ColumnSpacing="16">
+        <!-- Body: categories left, detail right. Star-sized so the dialog shrinks
+             with the window at any display scale; the detail pane scrolls when the
+             content is taller than the available space. -->
+        <Grid
+            Grid.Row="1"
+            MinHeight="300"
+            MaxHeight="430"
+            ColumnSpacing="14">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="210" />
+                <ColumnDefinition Width="180" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
@@ -88,10 +91,14 @@
                 </ListViewItem>
             </ListView>
 
-            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+            <ScrollViewer
+                Grid.Column="1"
+                Padding="0,0,14,0"
+                VerticalScrollBarVisibility="Visible"
+                VerticalScrollMode="Auto">
                 <Grid>
                     <!-- ============ Data saving: SQL Server connection ============ -->
-                    <StackPanel x:Name="PanelDataSaving" Spacing="10">
+                    <StackPanel x:Name="PanelDataSaving" Spacing="8">
                         <TextBlock FontWeight="SemiBold" Text="SQL Server connection" />
                         <TextBlock
                             FontSize="12"
