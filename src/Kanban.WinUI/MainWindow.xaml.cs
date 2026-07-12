@@ -66,11 +66,11 @@ public sealed partial class MainWindow : Window
             ViewModel = null; // fallback, nav will be minimal
         }
 
-        // Mica (BaseAlt) is set in XAML; fall back to acrylic glass where Mica is unsupported
-        if (!MicaController.IsSupported())
+        // DesktopAcrylic (liquid glass) is set in XAML; fall back to Mica where unsupported
+        if (!DesktopAcrylicController.IsSupported())
         {
-            this.SystemBackdrop = new DesktopAcrylicBackdrop();
-            App.AppendStartupLog("MainWindow: Mica unsupported - using DesktopAcrylic backdrop");
+            this.SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+            App.AppendStartupLog("MainWindow: DesktopAcrylic unsupported - using Mica backdrop");
         }
 
         // Wire global notification to InfoBar (WinUI3 modern replacement)
