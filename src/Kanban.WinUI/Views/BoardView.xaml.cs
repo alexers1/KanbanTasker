@@ -17,7 +17,6 @@ namespace Kanban_WinUI.Views
         {
             this.InitializeComponent();
             taskFlyout.Opening += TaskFlyout_Opening;
-            Loaded += (_, _) => Services.LiquidGlass.AttachPointerGlint(this);
         }
 
         // Visual Layer + Win2D liquid glass behind columns and the edit pane

@@ -33,8 +33,8 @@
                                   FallbackColor="#262220" />
                     <SolidColorBrush x:Key="GlassCardBrush" Color="#FFFFFF" Opacity="0.10" />
                     <LinearGradientBrush x:Key="GlassEdgeBrush" StartPoint="0,0" EndPoint="0,1">
-                        <GradientStop Offset="0" Color="#3EFFFFFF" />
-                        <GradientStop Offset="1" Color="#14FFFFFF" />
+                        <GradientStop Offset="0" Color="#26FFFFFF" />
+                        <GradientStop Offset="1" Color="#12FFFFFF" />
                     </LinearGradientBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Light">
