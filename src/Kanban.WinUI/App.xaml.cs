@@ -6,10 +6,6 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 
-// Explicit Windows App SDK runtime initialization (DeploymentManager) for stable
-// unpackaged/direct-exe runs, combined with <WindowsAppSDKSelfContained>true in the csproj.
-using Microsoft.Windows.ApplicationModel.WindowsAppRuntime;
-
 // Win32 MessageBox for fatal startup errors (visible even when no XAML window exists yet).
 using System.Runtime.InteropServices;
 
@@ -38,18 +34,9 @@ public partial class App : Application
 
     public App()
     {
+        // The Windows App Runtime was already verified and bootstrapped by Program.Main's
+        // environment pre-check, so the app only reaches here on a supported machine.
         AppendStartupLog("App() constructor entered");
-
-        // Manual WindowsAppRuntime init (auto-initializer disabled in csproj); never fatal in dev.
-        try
-        {
-            var initResult = DeploymentManager.Initialize(new DeploymentInitializeOptions { OnErrorShowUI = false });
-            AppendStartupLog($"DeploymentManager.Initialize: Status={initResult.Status}");
-        }
-        catch (Exception ex)
-        {
-            AppendStartupLog($"WindowsAppRuntime init exception (non-fatal): {ex.Message}");
-        }
 
         InitializeComponent();
 

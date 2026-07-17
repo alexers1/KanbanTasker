@@ -63,10 +63,27 @@ namespace KanbanTasker.Services
                     var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path));
                     if (settings?.Database != null && !string.IsNullOrWhiteSpace(settings.Database.Server))
                         return settings.Database;
+
+                    Log($"appsettings.json at {path} has no usable Database section - ignoring it.");
                 }
-                catch { /* unreadable/corrupt - try the next location */ }
+                catch (Exception ex)
+                {
+                    // A corrupt/hand-edited file must not look like "no configuration": say so.
+                    Log($"appsettings.json at {path} could not be read ({ex.Message}) - ignoring it.");
+                }
             }
             return null;
+        }
+
+        private static void Log(string message)
+        {
+            try
+            {
+                File.AppendAllText(
+                    Path.Combine(Path.GetTempPath(), "Kanban.WinUI.Startup.log"),
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}{Environment.NewLine}");
+            }
+            catch { /* logging must never block startup */ }
         }
 
         /// <summary>Writes appsettings.json next to the exe; falls back to app data if not writable.</summary>

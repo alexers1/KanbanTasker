@@ -84,17 +84,27 @@
   <PropertyGroup>
     <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
     <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-    <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
-    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+    <!-- Trimming stays off: WinUI XAML type activation and EF Core rely on reflection. -->
+    <PublishTrimmed>false</PublishTrimmed>
 
-    <!-- 
-      For reliable "dotnet run" / direct exe (unpackaged) launches during development (no MSIX install required):
-      - WindowsAppSDKSelfContained=true : copies the Windows App Runtime bits from the NuGet package next to the exe.
-        This allows the app to run on machines without a system-registered WindowsAppRuntime (avoids REGDB_E_CLASSNOTREG).
-      - Disable the built-in auto DeploymentManager initializer (the one that crashes early in .cctor if COM classes not registered).
-        We take explicit control in App.xaml.cs with a manual call (safer, matches the SQLite provider early-init pattern already here).
+    <!--
+      Framework-dependent, unpackaged deployment:
+      - WindowsAppSDKSelfContained=false : the app uses the Windows App Runtime installed on
+        the machine instead of carrying a private copy. Program.cs verifies the prerequisites
+        up front and reports anything missing rather than crashing cryptically.
+      - WindowsPackageType=None : plain .exe, no MSIX identity.
+      - WindowsAppSdkBootstrapInitialize=false : we call the bootstrapper ourselves in Main,
+        AFTER the environment pre-check has run (the auto-initializer is a module initializer
+        that would otherwise run before Main and crash when the runtime is absent).
+      - Trimming stays off: WinUI/EF Core rely on reflection.
     -->
-    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
     <WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
+    <!-- Emits Microsoft.WindowsAppSDK.Release/.Runtime.Version constants that
+         EnvironmentCheck uses to bootstrap and to report the required version. -->
+    <WindowsAppSdkIncludeVersionInfo>true</WindowsAppSdkIncludeVersionInfo>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
 </Project>
