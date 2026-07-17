@@ -5,6 +5,9 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>Kanban_WinUI</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Embeds the multi-size .ico as the exe's Win32 icon resource, so File Explorer,
+         the taskbar and shortcuts show it. AppWindow.SetIcon only covers the live window. -->
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
     <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
