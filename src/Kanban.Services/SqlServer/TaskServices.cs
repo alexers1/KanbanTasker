@@ -52,6 +52,17 @@ namespace KanbanTasker.Services.SqlServer
             {
                 db.Tasks.Remove(task);
                 await db.SaveChangesAsync();
+
+                // Renumber the remaining cards in that column so ColumnIndex stays
+                // contiguous. This data-integrity step used to run as a loop of calls
+                // from the WinUI client; it belongs on the server, done atomically.
+                var remaining = await db.Tasks
+                    .Where(t => t.BoardId == task.BoardId && t.Category == task.Category)
+                    .OrderBy(t => t.ColumnIndex)
+                    .ToListAsync();
+                for (int i = 0; i < remaining.Count; i++)
+                    remaining[i].ColumnIndex = i;
+                await db.SaveChangesAsync();
             }
 
             result.Success = true;

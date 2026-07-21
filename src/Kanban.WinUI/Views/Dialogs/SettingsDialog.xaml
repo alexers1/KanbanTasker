@@ -59,10 +59,10 @@
                 CornerRadius="8"
                 SelectionChanged="CategoryList_SelectionChanged"
                 SelectionMode="Single">
-                <ListViewItem Tag="DataSaving">
+                <ListViewItem Tag="Connection">
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <FontIcon FontSize="14" Glyph="&#xE968;" />
-                        <TextBlock Text="Data saving" />
+                        <FontIcon FontSize="14" Glyph="&#xE839;" />
+                        <TextBlock Text="Connection" />
                     </StackPanel>
                 </ListViewItem>
                 <ListViewItem Tag="Backup">
@@ -97,21 +97,68 @@
                 VerticalScrollBarVisibility="Visible"
                 VerticalScrollMode="Auto">
                 <Grid>
-                    <!-- ============ Data saving: SQL Server connection ============ -->
-                    <StackPanel x:Name="PanelDataSaving" Spacing="8">
-                        <TextBlock FontWeight="SemiBold" Text="API connection" />
+                    <!-- ============ Connection: how to reach the Kanban API ============ -->
+                    <StackPanel x:Name="PanelConnection" Spacing="10">
+                        <TextBlock FontWeight="SemiBold" Text="Connection" />
                         <TextBlock
                             FontSize="12"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="The client reads and writes all data through the Kanban API. Enter the API address; it is verified before it is saved. A new address takes effect after restarting the app."
+                            Text="Choose how this client reaches the Kanban server. The setting is verified before it is saved and takes effect after restarting the app."
                             TextWrapping="Wrap" />
-                        <TextBox
-                            x:Name="CfgApiUrlBox"
-                            Header="API base URL"
-                            PlaceholderText="http://localhost:5000" />
+
+                        <RadioButtons x:Name="ConnModeRadios" SelectionChanged="ConnMode_SelectionChanged">
+                            <RadioButton Tag="LanIp" Content="LAN — connect directly by IP address" />
+                            <RadioButton Tag="DefaultUrl" IsEnabled="False" Content="Default URL — public address (coming soon)" />
+                        </RadioButtons>
+
+                        <!-- LAN IP mode (implemented): direct in-network connection to the server -->
+                        <StackPanel x:Name="PanelLanIp" Spacing="8">
+                            <TextBlock
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="On the same network as the server, connect straight to its IP address — no internet or public path is involved."
+                                TextWrapping="Wrap" />
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="110" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox
+                                    x:Name="CfgServerIpBox"
+                                    Header="Server IP address"
+                                    PlaceholderText="192.168.5.2"
+                                    TextChanged="ConnField_Changed" />
+                                <TextBox
+                                    x:Name="CfgServerPortBox"
+                                    Grid.Column="1"
+                                    Header="Port"
+                                    PlaceholderText="5000"
+                                    TextChanged="ConnField_Changed" />
+                            </Grid>
+                            <TextBlock
+                                x:Name="ConnUrlPreview"
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="" />
+                        </StackPanel>
+
+                        <!-- Default URL mode (sample only — not implemented) -->
+                        <StackPanel x:Name="PanelDefaultUrl" Spacing="8" Visibility="Collapsed">
+                            <TextBlock
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="Reserved for reaching the server through a public address (e.g. a domain via Cloudflare Tunnel) when you are off the LAN. Not implemented yet."
+                                TextWrapping="Wrap" />
+                            <TextBox
+                                x:Name="CfgDefaultUrlBox"
+                                Header="Public URL"
+                                PlaceholderText="https://kanban.example.com"
+                                IsEnabled="False" />
+                        </StackPanel>
+
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <Button
-                                Click="BtnTestSaveApi_Click"
+                                Click="BtnTestSaveConn_Click"
                                 Style="{ThemeResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <FontIcon FontSize="14" Glyph="&#xE8CE;" />

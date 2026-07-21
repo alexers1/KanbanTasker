@@ -1,0 +1,22 @@
+@* A small yes/no confirm used before destructive actions (delete board/column/task). *@
+
+<div class="modal-backdrop" @onclick="OnCancel">
+    <div class="modal glass" style="width:min(420px,92vw)" @onclick:stopPropagation="true">
+        <div class="modal-head">
+            <h2 class="modal-title">@Title</h2>
+        </div>
+        <p style="color:var(--text-secondary);font-size:14px;line-height:1.5;margin:0">@Message</p>
+        <div class="modal-foot">
+            <button class="btn subtle" @onclick="OnCancel">Cancel</button>
+            <button class="btn danger accent" style="background:var(--prio-high)" @onclick="OnConfirm">@ConfirmText</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Are you sure?";
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string ConfirmText { get; set; } = "Delete";
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+}

@@ -1,0 +1,451 @@
+@page "/"
+@implements IDisposable
+@inject KanbanApiClient Api
+@inject ThemeService Theme
+@inject IJSRuntime JS
+@using Kanban.Web.Components
+
+<div class="app-shell @(sidebarOpen ? "" : "sidebar-collapsed")">
+
+    <!-- ============ Sidebar: boards ============ -->
+    <aside class="sidebar glass">
+        <div class="sidebar-brand">
+            <img class="logo" src="applogo.png" alt="Kanban Tasker" />
+            <span style="flex:1">Kanban Tasker</span>
+            <button class="btn icon subtle sidebar-collapse-btn" @onclick="ToggleSidebar" title="Collapse sidebar">«</button>
+        </div>
+
+        <div class="sidebar-section">
+            <span>Boards</span>
+            <button class="btn icon subtle" title="New board" @onclick="NewBoard">＋</button>
+        </div>
+
+        <div class="board-list">
+            @foreach (var b in boards)
+            {
+                <button class="board-item @(b.Id == currentBoard?.Id ? "active" : "")"
+                        @onclick="() => SelectBoard(b)">
+                    <span class="dot"></span>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@b.Name</span>
+                </button>
+            }
+            @if (boards.Count == 0 && !loading)
+            {
+                <div style="padding:12px 8px;font-size:13px;color:var(--text-tertiary)">
+                    No boards yet.
+                </div>
+            }
+        </div>
+
+        <div class="sidebar-footer">
+            <button class="btn subtle" style="flex:1" @onclick="ToggleTheme" title="Toggle theme">
+                @(Theme.Current == "dark" ? "☀ Light" : "☾ Dark")
+            </button>
+        </div>
+    </aside>
+
+    <!-- Drawer backdrop (tablet / phone only; hidden on desktop) -->
+    <div class="scrim" @onclick="CloseSidebar"></div>
+
+    <!-- ============ Main: current board ============ -->
+    <section class="main glass">
+        <div class="topbar">
+            <button class="btn icon subtle hamburger" @onclick="ToggleSidebar" title="Menu">☰</button>
+            <span class="topbar-title">@(currentBoard?.Name ?? "Kanban Tasker")</span>
+        </div>
+        <div class="main-body">
+        @if (loading)
+        {
+            <div class="loading-center"><div class="spinner"></div></div>
+        }
+        else if (currentBoard is null)
+        {
+            <div class="empty-state">
+                <div class="big">🗂</div>
+                <div>
+                    <div style="font-size:16px;font-weight:600;color:var(--text-primary)">No board selected</div>
+                    <div>Create a board to get started.</div>
+                </div>
+                <button class="btn accent" @onclick="NewBoard">＋ New board</button>
+            </div>
+        }
+        else
+        {
+            <div class="board-header">
+                <div>
+                    <h1 class="board-title">@currentBoard.Name</h1>
+                    @if (!string.IsNullOrWhiteSpace(currentBoard.Notes) && currentBoard.Notes != currentBoard.Name)
+                    {
+                        <p class="board-notes">@currentBoard.Notes</p>
+                    }
+                </div>
+                <div class="board-header-actions">
+                    <button class="btn subtle" @onclick="() => EditBoard(currentBoard)" title="Edit board">✎ Edit</button>
+                    <button class="btn subtle danger" @onclick="() => AskDeleteBoard(currentBoard)" title="Delete board">🗑</button>
+                </div>
+            </div>
+
+            <div class="board-scroll">
+                <div class="columns">
+                    @foreach (var col in columns.OrderBy(c => c.Position))
+                    {
+                        var colTasks = TasksIn(col.ColumnName);
+                        var over = colTasks.Count > col.MaxTaskLimit;
+                        <div class="column glass @(dragOverColumn == col.ColumnName ? "drop-target" : "")"
+                             @ondragover:preventDefault="true"
+                             @ondragover="() => dragOverColumn = col.ColumnName"
+                             @ondragleave="() => dragOverColumn = null"
+                             @ondrop="() => DropOn(col)">
+                            <div class="column-head">
+                                <span class="column-name">
+                                    @col.ColumnName
+                                    <span class="column-count @(over ? "over-limit" : "")">@colTasks.Count</span>
+                                </span>
+                                <button class="btn icon subtle" title="Delete column"
+                                        @onclick="() => AskDeleteColumn(col)">🗑</button>
+                            </div>
+
+                            <div class="cards">
+                                @foreach (var t in colTasks)
+                                {
+                                    <div class="card @PriorityClass(t)"
+                                         draggable="true"
+                                         @ondragstart="() => StartDrag(t)"
+                                         @ondragend="() => draggedTask = null"
+                                         @onclick="() => EditTask(t)">
+                                        <div class="card-title">@t.Title</div>
+                                        @if (!string.IsNullOrWhiteSpace(t.Description))
+                                        {
+                                            <div class="card-desc">@t.Description</div>
+                                        }
+                                        <div class="card-meta">
+                                            @if (!string.IsNullOrWhiteSpace(t.DueDate))
+                                            {
+                                                <span class="chip due @(IsOverdue(t) ? "overdue" : "")">📅 @FormatDue(t.DueDate)</span>
+                                            }
+                                            @foreach (var tag in Tags(t.Tags))
+                                            {
+                                                <span class="chip tag">@tag</span>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+
+                            <button class="add-card-btn" @onclick="() => NewTask(col.ColumnName)">＋ Add card</button>
+                        </div>
+                    }
+
+                    <div class="add-column">
+                        <button class="add-column-btn" @onclick="() => showColumnDialog = true">＋ Add column</button>
+                    </div>
+                </div>
+            </div>
+        }
+        </div>
+    </section>
+</div>
+
+<!-- ============ Dialogs ============ -->
+@if (editingTask is not null)
+{
+    <TaskDialog Task="editingTask" Columns="ColumnNames"
+                OnSave="SaveTask" OnCancel="() => editingTask = null" />
+}
+@if (editingBoard is not null)
+{
+    <BoardDialog Board="editingBoard"
+                 OnSave="SaveBoard" OnCancel="() => editingBoard = null" />
+}
+@if (confirm is not null)
+{
+    <ConfirmDialog Title="@confirm.Title" Message="@confirm.Message"
+                   OnConfirm="confirm.Action" OnCancel="() => confirm = null" />
+}
+@if (showColumnDialog)
+{
+    <div class="modal-backdrop" @onclick="() => showColumnDialog = false">
+        <div class="modal glass" style="width:min(420px,92vw)" @onclick:stopPropagation="true">
+            <div class="modal-head"><h2 class="modal-title">New column</h2></div>
+            <div class="field">
+                <label>Column name</label>
+                <input class="input" @bind="newColumnName" @bind:event="oninput" placeholder="e.g. Testing" />
+            </div>
+            <div class="modal-foot">
+                <button class="btn subtle" @onclick="() => showColumnDialog = false">Cancel</button>
+                <button class="btn accent" @onclick="AddColumn">Add</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(banner))
+{
+    <div class="banner error">@banner</div>
+}
+
+@code {
+    private List<BoardDTO> boards = new();
+    private BoardDTO? currentBoard;
+    private List<ColumnDTO> columns = new();
+    private List<TaskDTO> tasks = new();
+
+    private bool loading = true;
+    private string banner = "";
+
+    // Dialog state
+    private TaskDTO? editingTask;
+    private BoardDTO? editingBoard;
+    private bool showColumnDialog;
+    private string newColumnName = "";
+    private ConfirmSpec? confirm;
+
+    // Drag state
+    private TaskDTO? draggedTask;
+    private string? dragOverColumn;
+
+    // Layout / responsive
+    private bool sidebarOpen = true;                  // desktop default; set from the viewport on first render
+    private bool isCompact;                           // true at tablet/phone widths (<= 1024px)
+    private DotNetObjectReference<Home>? selfRef;
+
+    private List<string> ColumnNames => columns.OrderBy(c => c.Position).Select(c => c.ColumnName).ToList();
+
+    protected override async System.Threading.Tasks.Task OnInitializedAsync()
+    {
+        Theme.Changed += OnThemeChanged;
+        await LoadBoards();
+    }
+
+    protected override async System.Threading.Tasks.Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Theme.InitAsync();
+
+            // Choose the initial sidebar mode from the viewport, and follow resizes/rotations.
+            var width = await JS.InvokeAsync<int>("kanbanLayout.width");
+            isCompact = width <= 1024;
+            sidebarOpen = !isCompact;                 // docked+open on desktop, drawer+closed on tablet/phone
+            selfRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("kanbanLayout.register", selfRef);
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        Theme.Changed -= OnThemeChanged;
+        selfRef?.Dispose();
+    }
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    // ===== Loading =====
+
+    private async System.Threading.Tasks.Task LoadBoards()
+    {
+        loading = true;
+        banner = "";
+        try
+        {
+            boards = await Api.GetBoardsAsync();
+            currentBoard = boards.FirstOrDefault(b => b.Id == currentBoard?.Id) ?? boards.FirstOrDefault();
+            if (currentBoard is not null)
+                await LoadBoard(currentBoard);
+        }
+        catch (Exception ex)
+        {
+            banner = $"Cannot reach the Kanban API — {ex.Message}. Is it running?";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async System.Threading.Tasks.Task LoadBoard(BoardDTO board)
+    {
+        columns = await Api.GetColumnsAsync(board.Id);
+        var all = await Api.GetTasksAsync();
+        tasks = all.Where(t => t.BoardId == board.Id).ToList();
+    }
+
+    private async System.Threading.Tasks.Task SelectBoard(BoardDTO board)
+    {
+        currentBoard = board;
+        if (isCompact) sidebarOpen = false;           // close the drawer after picking a board
+        loading = true;
+        try { await LoadBoard(board); }
+        finally { loading = false; }
+    }
+
+    private List<TaskDTO> TasksIn(string columnName) =>
+        tasks.Where(t => t.Category == columnName).OrderBy(t => t.ColumnIndex).ToList();
+
+    // ===== Tasks =====
+
+    private void NewTask(string columnName) =>
+        editingTask = new TaskDTO
+        {
+            BoardId = currentBoard!.Id,
+            Category = columnName,
+            ColorKey = "Low",
+            DateCreated = DateTime.Now.ToString("yyyy-MM-dd"),
+            ColumnIndex = TasksIn(columnName).Count
+        };
+
+    private void EditTask(TaskDTO t) => editingTask = Clone(t);
+
+    private async System.Threading.Tasks.Task SaveTask(TaskDTO t)
+    {
+        var result = await Api.SaveTaskAsync(t);
+        editingTask = null;
+        if (!result.Success)
+        {
+            banner = string.IsNullOrEmpty(result.ErrorMessage) ? "Could not save the task." : result.ErrorMessage;
+            return;
+        }
+        if (currentBoard is not null) await LoadBoard(currentBoard);
+    }
+
+    // ===== Drag & drop between columns =====
+
+    private void StartDrag(TaskDTO t) => draggedTask = t;
+
+    private async System.Threading.Tasks.Task DropOn(ColumnDTO col)
+    {
+        dragOverColumn = null;
+        if (draggedTask is null || draggedTask.Category == col.ColumnName) { draggedTask = null; return; }
+
+        draggedTask.Category = col.ColumnName;
+        draggedTask.ColumnIndex = TasksIn(col.ColumnName).Count;
+        var moved = draggedTask;
+        draggedTask = null;
+
+        await Api.MoveTaskToColumnAsync(moved);
+        if (currentBoard is not null) await LoadBoard(currentBoard);
+    }
+
+    // ===== Boards =====
+
+    private void NewBoard() => editingBoard = new BoardDTO();
+    private void EditBoard(BoardDTO b) => editingBoard = new BoardDTO { Id = b.Id, Name = b.Name, Notes = b.Notes };
+
+    private async System.Threading.Tasks.Task SaveBoard(BoardDTO b)
+    {
+        bool isNew = b.Id == 0;
+        var result = await Api.SaveBoardAsync(b);
+        editingBoard = null;
+        if (!result.Success)
+        {
+            banner = string.IsNullOrEmpty(result.ErrorMessage) ? "Could not save the board." : result.ErrorMessage;
+            return;
+        }
+        if (isNew && result.Entity is not null)
+        {
+            await Api.CreateDefaultColumnsAsync(result.Entity.Id);
+            currentBoard = result.Entity;
+        }
+        await LoadBoards();
+    }
+
+    private void AskDeleteBoard(BoardDTO b) => confirm = new ConfirmSpec
+    {
+        Title = "Delete board?",
+        Message = $"“{b.Name}” and all its columns and cards will be permanently deleted.",
+        Action = EventCallback.Factory.Create(this, async () =>
+        {
+            confirm = null;
+            await Api.DeleteBoardAsync(b.Id);
+            if (currentBoard?.Id == b.Id) currentBoard = null;
+            await LoadBoards();
+        })
+    };
+
+    // ===== Columns =====
+
+    private async System.Threading.Tasks.Task AddColumn()
+    {
+        if (string.IsNullOrWhiteSpace(newColumnName) || currentBoard is null) { showColumnDialog = false; return; }
+        await Api.CreateColumnAsync(new ColumnDTO
+        {
+            BoardId = currentBoard.Id,
+            ColumnName = newColumnName.Trim(),
+            Position = columns.Count,
+            MaxTaskLimit = 10
+        });
+        newColumnName = "";
+        showColumnDialog = false;
+        await LoadBoard(currentBoard);
+    }
+
+    private void AskDeleteColumn(ColumnDTO col) => confirm = new ConfirmSpec
+    {
+        Title = "Delete column?",
+        Message = $"“{col.ColumnName}” and its cards will be deleted.",
+        Action = EventCallback.Factory.Create(this, async () =>
+        {
+            confirm = null;
+            await Api.DeleteColumnAsync(col);
+            if (currentBoard is not null) await LoadBoard(currentBoard);
+        })
+    };
+
+    // ===== Layout / sidebar =====
+
+    private void ToggleSidebar() => sidebarOpen = !sidebarOpen;
+    private void CloseSidebar() => sidebarOpen = false;
+
+    /// <summary>Called from JS on window resize; flips the drawer mode at the 1024px breakpoint.</summary>
+    [JSInvokable]
+    public void OnViewportResize(int width)
+    {
+        var compact = width <= 1024;
+        if (compact != isCompact)
+        {
+            isCompact = compact;
+            sidebarOpen = !compact;                    // reset to the sensible default for the new mode
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // ===== Theme =====
+
+    private async System.Threading.Tasks.Task ToggleTheme() => await Theme.ToggleAsync();
+
+    // ===== Helpers =====
+
+    private static TaskDTO Clone(TaskDTO t) => new()
+    {
+        Id = t.Id, BoardId = t.BoardId, DateCreated = t.DateCreated, DueDate = t.DueDate,
+        StartDate = t.StartDate, FinishDate = t.FinishDate, TimeDue = t.TimeDue,
+        ReminderTime = t.ReminderTime, Title = t.Title, Description = t.Description,
+        Category = t.Category, ColumnIndex = t.ColumnIndex, ColorKey = t.ColorKey,
+        Tags = t.Tags, Attachments = t.Attachments
+    };
+
+    private static string PriorityClass(TaskDTO t) => (t.ColorKey?.ToLowerInvariant()) switch
+    {
+        "high" => "prio-high",
+        "medium" => "prio-medium",
+        _ => "prio-low"
+    };
+
+    private static IEnumerable<string> Tags(string? tags) =>
+        string.IsNullOrWhiteSpace(tags)
+            ? Enumerable.Empty<string>()
+            : tags.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private bool IsOverdue(TaskDTO t) =>
+        DateTime.TryParse(t.DueDate, out var d) && d.Date < DateTime.Today && t.Category != "Completed";
+
+    private static string FormatDue(string due) =>
+        DateTime.TryParse(due, out var d) ? d.ToString("MMM d") : due;
+
+    private class ConfirmSpec
+    {
+        public string Title { get; set; } = "";
+        public string Message { get; set; } = "";
+        public EventCallback Action { get; set; }
+    }
+}

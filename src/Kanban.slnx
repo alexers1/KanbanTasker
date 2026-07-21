@@ -8,5 +8,6 @@
   </Folder>
   <Folder Name="/Client/">
     <Project Path="Kanban.WinUI/Kanban.WinUI.csproj" />
+    <Project Path="Kanban.Web/Kanban.Web.csproj" />
   </Folder>
 </Solution>

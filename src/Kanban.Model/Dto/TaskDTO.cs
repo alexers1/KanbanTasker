@@ -27,6 +27,9 @@ namespace KanbanTasker.Model.Dto
         /// </summary>
         public string Attachments { get; set; } = "";
 
-        public virtual BoardDTO Board { get; set; } = null!;
+        // Navigation back to the owning board. Optional on the wire: requests identify
+        // the board by BoardId, so the client never sends this (a non-nullable reference
+        // here would make ASP.NET model-validation reject every create).
+        public virtual BoardDTO? Board { get; set; }
     }
 }

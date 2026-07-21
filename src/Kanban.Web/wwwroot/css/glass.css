@@ -1,0 +1,161 @@
+/* ============================================================================
+   glass.css — shared liquid-glass design tokens for the Kanban web client.
+
+   This is the web counterpart of the WinUI theme dictionary in
+   Kanban.WinUI/App.xaml (GlassSurfaceBrush / GlassCardBrush / GlassEdgeBrush /
+   AmbientGlow*). The hex values are kept identical so both front-ends read as
+   the same product; WinUI paints glass with a compositor (DesktopAcrylic +
+   Win2D), the web approximates the same look with CSS backdrop-filter.
+
+   Dark is the default (matching WinUI's Default dictionary); [data-theme="light"]
+   is the Light dictionary.
+   ============================================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* Warm frosted panel — WinUI GlassSurfaceBrush tint #221E1C @ luminosity 0.72 */
+  --glass-surface: rgba(34, 30, 28, 0.72);
+  --glass-surface-solid: #262220;
+  /* Floating card over the glass — GlassCardBrush #FFFFFF @ 0.10 */
+  --glass-card: rgba(255, 255, 255, 0.06);
+  --glass-card-hover: rgba(255, 255, 255, 0.12);
+  /* Specular rim — GlassEdgeBrush gradient #26FFFFFF -> #12FFFFFF */
+  --glass-edge-top: rgba(255, 255, 255, 0.15);
+  --glass-edge-bottom: rgba(255, 255, 255, 0.06);
+  /* Glossy top sheen the Win2D graph draws over the body */
+  --glass-sheen: rgba(255, 255, 255, 0.10);
+
+  /* Ambient glow — AmbientGlowPrimaryBrush #C7341D @ 0x80, Secondary #4A1E11 @ 0x52 */
+  --glow-primary: rgba(199, 52, 29, 0.50);
+  --glow-secondary: rgba(74, 30, 17, 0.32);
+
+  /* Sedela accent palette */
+  --accent: #E8663C;
+  --accent-strong: #C7341D;
+  --accent-contrast: #ffffff;
+
+  /* Region behind the glass — RegionBrush #202020 */
+  --region-bg: #1a1715;
+
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.58);
+  --text-tertiary: rgba(255, 255, 255, 0.38);
+
+  --divider: rgba(255, 255, 255, 0.08);
+  --control-bg: rgba(255, 255, 255, 0.05);
+  --control-bg-hover: rgba(255, 255, 255, 0.10);
+  --control-border: rgba(255, 255, 255, 0.12);
+
+  /* Priority colors — WinUI StringToColorConverter (high/medium/low) */
+  --prio-high: #E5484D;
+  --prio-medium: #F5A623;
+  --prio-low: #3FB950;
+
+  /* Glass physics */
+  --blur: 30px;
+  --saturate: 1.4;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow-glass: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --shadow-card: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --glass-surface: rgba(251, 250, 249, 0.80);
+  --glass-surface-solid: #f5f3f2;
+  --glass-card: rgba(255, 255, 255, 0.72);
+  --glass-card-hover: rgba(255, 255, 255, 0.92);
+  --glass-edge-top: rgba(255, 255, 255, 0.90);
+  --glass-edge-bottom: rgba(0, 0, 0, 0.12);
+  --glass-sheen: rgba(255, 255, 255, 0.55);
+
+  --glow-primary: rgba(232, 102, 60, 0.22);
+  --glow-secondary: rgba(217, 160, 91, 0.16);
+
+  --accent: #E8663C;
+  --accent-strong: #C7341D;
+  --accent-contrast: #ffffff;
+
+  --region-bg: #efe9e6;
+
+  --text-primary: rgba(24, 20, 18, 0.95);
+  --text-secondary: rgba(24, 20, 18, 0.60);
+  --text-tertiary: rgba(24, 20, 18, 0.40);
+
+  --divider: rgba(0, 0, 0, 0.08);
+  --control-bg: rgba(255, 255, 255, 0.55);
+  --control-bg-hover: rgba(255, 255, 255, 0.85);
+  --control-border: rgba(0, 0, 0, 0.10);
+
+  --prio-high: #D3352F;
+  --prio-medium: #C6820E;
+  --prio-low: #2C9E45;
+
+  --shadow-glass: 0 12px 40px rgba(60, 40, 30, 0.18);
+  --shadow-card: 0 4px 14px rgba(60, 40, 30, 0.12);
+}
+
+/* ---- Glass primitives ---------------------------------------------------- */
+
+/* A frosted panel: blur+saturate body + gradient specular rim + top sheen.
+   Same three-layer construction as LiquidGlass.cs (body / sheen / rim). */
+.glass {
+  position: relative;
+  background: var(--glass-surface);
+  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-glass);
+}
+
+/* Gradient rim (GlassEdgeBrush): bright top edge fading to a faint bottom,
+   drawn as a 1px masked border so it doesn't tint the body. */
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(to bottom, var(--glass-edge-top), var(--glass-edge-bottom));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Glossy sheen across the upper third — the specular highlight. */
+.glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(to bottom, var(--glass-sheen), transparent 42%);
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.glass > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Fallback for browsers without backdrop-filter: fall back to the solid tint. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: var(--glass-surface-solid);
+  }
+}
+
+/* Respect reduced-transparency / reduced-motion users. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--glass-surface-solid);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

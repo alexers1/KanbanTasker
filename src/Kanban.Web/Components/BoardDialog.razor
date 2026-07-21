@@ -1,0 +1,51 @@
+@*
+   Create / edit a board (name + notes). New boards are seeded with the default
+   columns by the parent after save.
+*@
+
+<div class="modal-backdrop" @onclick="OnCancel">
+    <div class="modal glass" @onclick:stopPropagation="true">
+        <div class="modal-head">
+            <h2 class="modal-title">@(Board.Id == 0 ? "New board" : "Edit board")</h2>
+            <button class="btn icon subtle" @onclick="OnCancel" title="Close">✕</button>
+        </div>
+
+        <div class="field">
+            <label>Name</label>
+            <input class="input" @bind="Board.Name" @bind:event="oninput" placeholder="e.g. Marketing" />
+        </div>
+        <div class="field">
+            <label>Notes</label>
+            <textarea class="textarea" @bind="Board.Notes" placeholder="What is this board for?"></textarea>
+        </div>
+
+        @if (!string.IsNullOrEmpty(Error))
+        {
+            <div class="modal-error">@Error</div>
+        }
+
+        <div class="modal-foot">
+            <button class="btn subtle" @onclick="OnCancel">Cancel</button>
+            <button class="btn accent" @onclick="Save">Save</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public BoardDTO Board { get; set; } = new();
+    [Parameter] public EventCallback<BoardDTO> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private string Error = "";
+
+    private async System.Threading.Tasks.Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(Board.Name))
+        {
+            Error = "Name is required.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(Board.Notes)) Board.Notes = Board.Name;
+        await OnSave.InvokeAsync(Board);
+    }
+}

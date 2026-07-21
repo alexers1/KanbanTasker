@@ -420,6 +420,9 @@ Thumbs.db
 
 # Real connection settings (contains credentials) - only the sample is committed
 appsettings.json
+# ...but the Blazor web client's appsettings.json holds only the API base URL
+# (no secrets) and the app needs it, so it IS tracked.
+!src/Kanban.Web/wwwroot/appsettings.json
 
 # Claude Code local settings
 .claude/

@@ -322,18 +322,13 @@ namespace Kanban_WinUI.ViewModels
             column.ColumnName = newColName;
             column.MaxTaskLimit = newColMax;
 
+            // The server persists the rename and cascades it to this column's tasks
+            // (their Category) in one operation — no per-task calls from the client.
             await _manifest.BoardServices.SaveColumnAsync(column.ToColumnDTO());
 
-            var tasksCopy = Board.Tasks.ToList();
-            foreach (PresentationTask task in tasksCopy)
-            {
-                if (task.Category == originalName)
-                {
-                    task.Category = newColName;
-                    await _manifest.TaskServices.UpdateColumnNameAsync(task.Id, task.Category);
-                }
-            }
-            Board.Tasks = new ObservableCollection<PresentationTask>(tasksCopy.OrderBy(x => x.ColumnIndex));
+            // Keep the in-memory cache consistent with the server's cascade.
+            foreach (PresentationTask task in Board.Tasks.Where(t => t.Category == originalName).ToList())
+                task.Category = newColName;
 
             if (IsPaneOpen && PaneTitle.Equals("New Task") && CurrentTask.Category.Equals(originalName))
                 CurrentTask.Category = newColName;
@@ -419,8 +414,8 @@ namespace Kanban_WinUI.ViewModels
 
             if (result.Success)
             {
+                // The server renumbers the column's remaining ColumnIndex values.
                 Board.Tasks.Remove(task);
-                await UpdateCardIndexesAfterDeletionAsync(task);
                 CurrentTask = Board.Tasks.LastOrDefault();
 
                 if (IsReminderSet(task))
@@ -436,40 +431,15 @@ namespace Kanban_WinUI.ViewModels
             await LoadColumnsAndTasksAsync();
         }
 
-        private async Task UpdateCardIndexesAfterDeletionAsync(PresentationTask deletedTask)
-        {
-            int startIndex = deletedTask.ColumnIndex;
-
-            var sortedTasks = Board.Tasks
-                .Where(x => x.Category == deletedTask.Category && x.ColumnIndex > deletedTask.ColumnIndex)
-                .OrderBy(x => x.ColumnIndex);
-
-            foreach (PresentationTask otherTask in sortedTasks)
-            {
-                otherTask.ColumnIndex = startIndex++;
-                await SaveCardIndexAsync(otherTask.Id, otherTask.ColumnIndex);
-            }
-        }
-
         public async Task DeleteColumnAsync(PresentationColumn col)
         {
             if (col == null) return;
 
+            // The server deletes the column's tasks and renumbers the remaining columns'
+            // positions; LoadColumnsAndTasksAsync then reloads the authoritative state.
             var result = await _manifest.BoardServices.DeleteColumnAsync(col.ToColumnDTO());
             if (result.Success)
-            {
-                Columns.Remove(col);
-
-                var deletedItemsPosition = col.Position;
-                for (int i = deletedItemsPosition; i < Columns.Count; i++)
-                {
-                    var column = Columns[i];
-                    column.Position -= 1;
-                    await _manifest.BoardServices.UpdateColumnIndexAsync(column.ToColumnDTO());
-                }
-
                 _appNotificationService?.DisplayNotificationAsync("Column deleted successfully", NOTIFICATION_DURATION);
-            }
 
             await LoadColumnsAndTasksAsync();
         }

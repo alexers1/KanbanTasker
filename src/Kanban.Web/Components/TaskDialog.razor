@@ -1,0 +1,93 @@
+@*
+   Create / edit a task. Works on a copy the parent hands in, so Cancel is a
+   no-op. Mirrors the WinUI edit pane (title, description, column, priority,
+   due date, tags) — richer WinUI-only bits (calendar picker, attachments,
+   reminders) are intentionally simplified for the web.
+*@
+
+<div class="modal-backdrop" @onclick="OnCancel">
+    <div class="modal glass" @onclick:stopPropagation="true">
+        <div class="modal-head">
+            <h2 class="modal-title">@(Task.Id == 0 ? "New task" : "Edit task")</h2>
+            <button class="btn icon subtle" @onclick="OnCancel" title="Close">✕</button>
+        </div>
+
+        <div class="field">
+            <label>Title</label>
+            <input class="input" @bind="Task.Title" @bind:event="oninput" placeholder="What needs doing?" />
+        </div>
+
+        <div class="field">
+            <label>Description</label>
+            <textarea class="textarea" @bind="Task.Description" placeholder="Details…"></textarea>
+        </div>
+
+        <div class="form-row">
+            <div class="field">
+                <label>Column</label>
+                <select class="select" @bind="Task.Category">
+                    @foreach (var c in Columns)
+                    {
+                        <option value="@c">@c</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Priority</label>
+                <select class="select" @bind="Task.ColorKey">
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="field">
+                <label>Due date</label>
+                <input class="input" type="date" @bind="DueDateValue" />
+            </div>
+            <div class="field">
+                <label>Tags <span style="font-weight:400;opacity:.7">(comma separated)</span></label>
+                <input class="input" @bind="Task.Tags" placeholder="design, urgent" />
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(Error))
+        {
+            <div class="modal-error">@Error</div>
+        }
+
+        <div class="modal-foot">
+            <button class="btn subtle" @onclick="OnCancel">Cancel</button>
+            <button class="btn accent" @onclick="Save">Save</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public TaskDTO Task { get; set; } = new();
+    [Parameter] public List<string> Columns { get; set; } = new();
+    [Parameter] public EventCallback<TaskDTO> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private string Error = "";
+
+    // Bridge the string DueDate (yyyy-MM-dd stored) to the <input type=date>.
+    private DateTime? DueDateValue
+    {
+        get => DateTime.TryParse(Task.DueDate, out var d) ? d : null;
+        set => Task.DueDate = value?.ToString("yyyy-MM-dd") ?? "";
+    }
+
+    private async System.Threading.Tasks.Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(Task.Title))
+        {
+            Error = "Title is required.";
+            return;
+        }
+        if (string.IsNullOrEmpty(Task.ColorKey)) Task.ColorKey = "Low";
+        await OnSave.InvokeAsync(Task);
+    }
+}

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kanban Tasker</title>
+    <base href="/" />
+    <link rel="preload" id="webassembly" />
+    <link rel="stylesheet" href="css/glass.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <!-- Shared WinUI app icon (multi-resolution .ico); sizes="any" lets the browser
+         pick the right embedded size. Replaces the Blazor default favicon. -->
+    <link rel="icon" type="image/x-icon" href="favicon.ico" sizes="any" />
+    <link href="Kanban.Web.styles.css" rel="stylesheet" />
+    <script type="importmap"></script>
+    <!-- Apply the saved theme before the app renders, so there's no light/dark flash.
+         Mirrors the WinUI client's two theme dictionaries; default is dark. -->
+    <script>
+        window.kanbanTheme = {
+            get: function () { return localStorage.getItem('kanban-theme') || 'dark'; },
+            set: function (t) {
+                localStorage.setItem('kanban-theme', t);
+                document.documentElement.setAttribute('data-theme', t);
+            }
+        };
+        document.documentElement.setAttribute('data-theme', window.kanbanTheme.get());
+
+        // Report viewport width to Blazor so the sidebar can switch between a
+        // docked column (desktop) and an overlay drawer (tablet / phone).
+        window.kanbanLayout = {
+            width: function () { return window.innerWidth; },
+            register: function (dotnet) {
+                var t;
+                window.addEventListener('resize', function () {
+                    clearTimeout(t);
+                    t = setTimeout(function () {
+                        dotnet.invokeMethodAsync('OnViewportResize', window.innerWidth);
+                    }, 150);
+                });
+            }
+        };
+    </script>
+</head>
+
+<body>
+    <div id="app">
+        <div class="loading-center" style="height:100vh">
+            <div class="spinner"></div>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+</body>
+
+</html>

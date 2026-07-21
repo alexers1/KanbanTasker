@@ -25,17 +25,16 @@ namespace Kanban_WinUI.Views.Dialogs
                 App.GetService<Kanban_WinUI.Services.AttachmentService>());
             DataContext = ViewModel;
 
-            // Data saving page: prefill the API address + show live status
-            CfgApiUrlBox.Text = ApiConfig.Current?.BaseUrl ?? "http://localhost:5000";
-            _ = ViewModel.LoadConnectionStatusAsync();
+            // Connection page: prefill the mode + fields and show live status
+            InitConnectionUi();
 
             CategoryList.SelectedIndex = 0;
         }
 
         private void CategoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            string tag = (CategoryList.SelectedItem as ListViewItem)?.Tag?.ToString() ?? "DataSaving";
-            PanelDataSaving.Visibility = tag == "DataSaving" ? Visibility.Visible : Visibility.Collapsed;
+            string tag = (CategoryList.SelectedItem as ListViewItem)?.Tag?.ToString() ?? "Connection";
+            PanelConnection.Visibility = tag == "Connection" ? Visibility.Visible : Visibility.Collapsed;
             PanelBackup.Visibility = tag == "Backup" ? Visibility.Visible : Visibility.Collapsed;
             PanelStorage.Visibility = tag == "Storage" ? Visibility.Visible : Visibility.Collapsed;
             PanelAttachments.Visibility = tag == "Attachments" ? Visibility.Visible : Visibility.Collapsed;
@@ -47,18 +46,88 @@ namespace Kanban_WinUI.Views.Dialogs
             Hide();
         }
 
-        // === Data saving: API connection ===
+        // === Connection: how the client reaches the API ===
 
-        private async void BtnTestSaveApi_Click(object sender, RoutedEventArgs e)
+        /// <summary>Prefill the connection controls from the running config.</summary>
+        private void InitConnectionUi()
+        {
+            var cfg = ApiConfig.Current ?? new ApiConfig();
+
+            // IP/port: prefer the stored fields; fall back to parsing an older raw BaseUrl.
+            string ip = cfg.ServerIp;
+            int port = cfg.ServerPort;
+            if (string.IsNullOrWhiteSpace(ip) || ip == "localhost")
+            {
+                var (parsedIp, parsedPort) = cfg.HostPortFromBaseUrl();
+                if (!string.IsNullOrWhiteSpace(parsedIp)) { ip = parsedIp; port = parsedPort; }
+            }
+
+            CfgServerIpBox.Text = ip;
+            CfgServerPortBox.Text = port.ToString();
+            CfgDefaultUrlBox.Text = cfg.DefaultUrl;
+
+            SelectModeRadio(cfg.Mode);      // fires ConnMode_SelectionChanged -> panel visibility + preview
+            _ = ViewModel.LoadConnectionStatusAsync();
+        }
+
+        private void SelectModeRadio(ApiConnectionMode mode)
+        {
+            foreach (var item in ConnModeRadios.Items)
+            {
+                if (item is RadioButton rb && rb.Tag?.ToString() == mode.ToString())
+                {
+                    ConnModeRadios.SelectedItem = rb;
+                    return;
+                }
+            }
+            ConnModeRadios.SelectedIndex = 0;   // default to LAN
+        }
+
+        private ApiConnectionMode SelectedMode() =>
+            (ConnModeRadios.SelectedItem as RadioButton)?.Tag?.ToString() == "DefaultUrl"
+                ? ApiConnectionMode.DefaultUrl
+                : ApiConnectionMode.LanIp;
+
+        private ApiConfig BuildConfigFromUi()
+        {
+            int port = int.TryParse(CfgServerPortBox.Text?.Trim(), out var p) ? p : 5000;
+            return new ApiConfig
+            {
+                Mode = SelectedMode(),
+                ServerIp = string.IsNullOrWhiteSpace(CfgServerIpBox.Text) ? "localhost" : CfgServerIpBox.Text.Trim(),
+                ServerPort = port,
+                DefaultUrl = CfgDefaultUrlBox.Text?.Trim() ?? ""
+            };
+        }
+
+        private void ConnMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Guarded: this can fire while the page is still being built.
+            if (PanelLanIp == null || PanelDefaultUrl == null) return;
+
+            bool lan = SelectedMode() == ApiConnectionMode.LanIp;
+            PanelLanIp.Visibility = lan ? Visibility.Visible : Visibility.Collapsed;
+            PanelDefaultUrl.Visibility = lan ? Visibility.Collapsed : Visibility.Visible;
+            UpdateConnPreview();
+        }
+
+        private void ConnField_Changed(object sender, TextChangedEventArgs e) => UpdateConnPreview();
+
+        private void UpdateConnPreview()
+        {
+            if (ConnUrlPreview == null) return;
+            ConnUrlPreview.Text = SelectedMode() == ApiConnectionMode.LanIp
+                ? $"Will connect to: {BuildConfigFromUi().BuildBaseUrl()}"
+                : "";
+        }
+
+        private async void BtnTestSaveConn_Click(object sender, RoutedEventArgs e)
         {
             if (ViewModel.IsBusy)
                 return;
 
-            var cfg = new ApiConfig
-            {
-                BaseUrl = string.IsNullOrWhiteSpace(CfgApiUrlBox.Text) ? "http://localhost:5000" : CfgApiUrlBox.Text.Trim()
-            };
-
+            var cfg = BuildConfigFromUi();
+            cfg.BaseUrl = cfg.BuildBaseUrl();      // effective URL used to test + persist
             await ViewModel.TestAndSaveApiAsync(cfg);
         }
 
