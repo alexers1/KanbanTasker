@@ -132,7 +132,7 @@
                                     x:Name="CfgServerPortBox"
                                     Grid.Column="1"
                                     Header="Port"
-                                    PlaceholderText="5000"
+                                    PlaceholderText="5001"
                                     TextChanged="ConnField_Changed" />
                             </Grid>
                             <TextBlock

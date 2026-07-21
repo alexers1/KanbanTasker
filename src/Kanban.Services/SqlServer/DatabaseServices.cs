@@ -67,8 +67,19 @@ namespace KanbanTasker.Services.SqlServer
 
         public async Task<string> ImportBackupAsync(string bakPath)
         {
-            // 1. Copy where the SQL Server service can read (user temp is proven accessible)
-            string temp = Path.Combine(Path.GetTempPath(), $"kt_import_{DateTime.Now:yyyyMMddHHmmss}.bak");
+            // 1. Copy the .bak into the SQL Server instance's own backup directory. The RESTORE
+            //    reads the file AS the SQL Server service account, which cannot access the API
+            //    process's temp folder when the two run under different accounts (e.g. the API as
+            //    LocalSystem writes to C:\Windows\SystemTemp, which SQL Server can't read ->
+            //    "Cannot open backup device ... operating system error 5"). The instance backup
+            //    directory is always readable by the service account.
+            string serverBackupDir;
+            using (var probe = new SqlConnection(ServiceCollectionExtensions.ConnectionString))
+            {
+                await probe.OpenAsync();
+                serverBackupDir = await GetServerBackupDirectoryAsync(probe);
+            }
+            string temp = Path.Combine(serverBackupDir, $"kt_import_{DateTime.Now:yyyyMMddHHmmss}.bak");
             File.Copy(bakPath, temp, overwrite: true);
             try
             {

@@ -102,4 +102,34 @@ public class KanbanApiClient
 
     public async Task<DatabaseUsage> GetUsageAsync() =>
         await _http.GetFromJsonAsync<DatabaseUsage>("api/database/usage", Json) ?? new();
+
+    /// <summary>Move completed tasks to the archive database (server-side). Returns the count moved.</summary>
+    public async Task<int> ArchiveCompletedAsync()
+    {
+        var resp = await _http.PostAsync("api/database/archive", null);
+        var body = await resp.Content.ReadFromJsonAsync<ArchiveResp>(Json);
+        return body?.Archived ?? 0;
+    }
+
+    /// <summary>Back up the database to a .bak at a path on the SERVER (API + DB are co-located).</summary>
+    public async Task<string> BackupAsync(string serverPath)
+    {
+        var resp = await _http.PostAsJsonAsync("api/database/backup", new { path = serverPath }, Json);
+        if (!resp.IsSuccessStatusCode) return $"Backup failed (HTTP {(int)resp.StatusCode}).";
+        var body = await resp.Content.ReadFromJsonAsync<PathResp>(Json);
+        return string.IsNullOrEmpty(body?.Path) ? "Backup completed." : $"Backup written to {body!.Path}";
+    }
+
+    /// <summary>Import a .bak (server path) into staging and merge its boards as new boards.</summary>
+    public async Task<string> ImportAsync(string serverBakPath)
+    {
+        var resp = await _http.PostAsJsonAsync("api/database/import", new { path = serverBakPath }, Json);
+        if (!resp.IsSuccessStatusCode) return $"Import failed (HTTP {(int)resp.StatusCode}).";
+        var body = await resp.Content.ReadFromJsonAsync<MsgResp>(Json);
+        return string.IsNullOrEmpty(body?.Message) ? "Import completed." : body!.Message;
+    }
+
+    private record ArchiveResp(int Archived);
+    private record PathResp(string Path);
+    private record MsgResp(string Message);
 }

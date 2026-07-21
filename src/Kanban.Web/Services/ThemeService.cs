@@ -23,9 +23,13 @@ public class ThemeService
         Changed?.Invoke();
     }
 
-    public async Task ToggleAsync()
+    public async Task ToggleAsync() => await SetAsync(Current == "dark" ? "light" : "dark");
+
+    /// <summary>Set an explicit theme ("dark" / "light").</summary>
+    public async Task SetAsync(string theme)
     {
-        Current = Current == "dark" ? "light" : "dark";
+        if (theme == Current) return;
+        Current = theme;
         await _js.InvokeVoidAsync("kanbanTheme.set", Current);
         Changed?.Invoke();
     }

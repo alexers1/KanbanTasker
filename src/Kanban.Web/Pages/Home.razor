@@ -41,6 +41,7 @@
             <button class="btn subtle" style="flex:1" @onclick="ToggleTheme" title="Toggle theme">
                 @(Theme.Current == "dark" ? "☀ Light" : "☾ Dark")
             </button>
+            <button class="btn subtle icon" @onclick="() => showSettings = true" title="Settings">⚙</button>
         </div>
     </aside>
 
@@ -179,6 +180,11 @@
     </div>
 }
 
+@if (showSettings)
+{
+    <SettingsDialog OnClose="() => showSettings = false" />
+}
+
 @if (!string.IsNullOrEmpty(banner))
 {
     <div class="banner error">@banner</div>
@@ -196,6 +202,7 @@
     // Dialog state
     private TaskDTO? editingTask;
     private BoardDTO? editingBoard;
+    private bool showSettings;
     private bool showColumnDialog;
     private string newColumnName = "";
     private ConfirmSpec? confirm;

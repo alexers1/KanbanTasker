@@ -7,10 +7,13 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-// The API base URL comes from wwwroot/appsettings.json (ApiBaseUrl) so the same build
-// can point at the local dev API or the deployed one without recompiling.
-var apiBase = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5000";
-builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(apiBase) });
+// Same-origin by default: the API hosts this app under /kanban, so HostEnvironment.BaseAddress
+// (from <base href="/kanban/">) already points at the API. A non-empty ApiBaseUrl in
+// wwwroot/appsettings.json overrides it (e.g. a standalone dev build against a separate API).
+var apiBase = builder.Configuration["ApiBaseUrl"];
+if (string.IsNullOrWhiteSpace(apiBase))
+    apiBase = builder.HostEnvironment.BaseAddress;
+builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(apiBase, UriKind.Absolute) });
 builder.Services.AddScoped<KanbanApiClient>();
 builder.Services.AddScoped<ThemeService>();
 

@@ -27,17 +27,19 @@ namespace Kanban_WinUI.Services.Api
         /// <summary>Which connection mode is active. LAN-by-IP is the implemented one.</summary>
         public ApiConnectionMode Mode { get; set; } = ApiConnectionMode.LanIp;
 
-        /// <summary>Server IP address for <see cref="ApiConnectionMode.LanIp"/> (e.g. 192.168.5.2).</summary>
-        public string ServerIp { get; set; } = "localhost";
+        /// <summary>Server IP address for <see cref="ApiConnectionMode.LanIp"/> (e.g. 192.168.5.2).
+        /// Defaults to the deployed server on the LAN.</summary>
+        public string ServerIp { get; set; } = "192.168.5.2";
 
-        /// <summary>Server port for <see cref="ApiConnectionMode.LanIp"/> (the API listens on 5000).</summary>
-        public int ServerPort { get; set; } = 5000;
+        /// <summary>Server port for <see cref="ApiConnectionMode.LanIp"/> (the deployed API listens on 5001).</summary>
+        public int ServerPort { get; set; } = 5001;
 
         /// <summary>Public URL for <see cref="ApiConnectionMode.DefaultUrl"/>. Sample only, unused.</summary>
         public string DefaultUrl { get; set; } = "";
 
-        /// <summary>The effective base URL the HttpClient talks to. Derived from the mode on save.</summary>
-        public string BaseUrl { get; set; } = "http://localhost:5000";
+        /// <summary>The effective base URL the HttpClient talks to. Derived from the mode on save.
+        /// Defaults to the LAN server so a fresh install connects without configuration.</summary>
+        public string BaseUrl { get; set; } = "http://192.168.5.2:5001";
 
         /// <summary>The configuration the app is running with (set after a successful connect).</summary>
         public static ApiConfig? Current { get; set; }

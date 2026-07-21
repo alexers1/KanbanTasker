@@ -1,0 +1,159 @@
+@*
+   Settings — mirrors the WinUI client's settings module (categories on the left, detail
+   on the right) and its parameters: Connection status, Storage usage + archive, Backup &
+   import (server paths), Appearance (theme), About. WinUI-only bits (local attachments
+   folder, file pickers) are simplified for the web.
+*@
+@inject KanbanApiClient Api
+@inject ThemeService Theme
+
+<div class="modal-backdrop" @onclick="OnClose">
+    <div class="modal glass settings-modal" @onclick:stopPropagation="true">
+        <div class="modal-head">
+            <h2 class="modal-title">Settings</h2>
+            <button class="btn icon subtle" @onclick="OnClose" title="Close">✕</button>
+        </div>
+
+        <div class="settings-body">
+            <div class="settings-cats">
+                @foreach (var c in Cats)
+                {
+                    <button class="settings-cat @(cat == c.Key ? "active" : "")" @onclick="() => cat = c.Key">
+                        <span class="ico">@c.Icon</span><span>@c.Label</span>
+                    </button>
+                }
+            </div>
+
+            <div class="settings-detail">
+                @if (cat == "Connection")
+                {
+                    <h3>Connection</h3>
+                    <p class="muted">
+                        This web client reads and writes through the Kanban API on the same server it was
+                        served from — there's no address to configure. (The desktop client can point at a
+                        LAN IP or a public URL.)
+                    </p>
+                    <p style="font-weight:600;font-size:13px">Status: @connText</p>
+                }
+                else if (cat == "Storage")
+                {
+                    <h3>Storage</h3>
+                    <div class="usage-bar"><div class="usage-fill" style="width:@UsagePercentCss"></div></div>
+                    <p class="muted">@usageText</p>
+                    <button class="btn" disabled="@busy" @onclick="Archive">Archive completed tasks</button>
+                    @if (!string.IsNullOrEmpty(archiveText)) { <p class="muted" style="margin-top:10px">@archiveText</p> }
+                }
+                else if (cat == "Backup")
+                {
+                    <h3>Backup &amp; import</h3>
+                    <p class="muted">
+                        Export a full SQL Server backup (.bak) or import one. Paths are on the
+                        <strong>server</strong> (where the API and database live), e.g. <code>C:\Backups\kanban.bak</code>.
+                        Import restores into a staging database and adds its boards next to yours — existing data is never overwritten.
+                    </p>
+                    <div class="field">
+                        <label>Backup file path (on the server)</label>
+                        <input class="input" @bind="backupPath" placeholder="C:\Backups\kanban.bak" />
+                    </div>
+                    <div style="display:flex;gap:10px">
+                        <button class="btn accent" disabled="@busy" @onclick="Backup">Export backup</button>
+                        <button class="btn" disabled="@busy" @onclick="Import">Import backup</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(backupText)) { <p class="muted" style="margin-top:10px">@backupText</p> }
+                }
+                else if (cat == "Appearance")
+                {
+                    <h3>Appearance</h3>
+                    <p class="muted">Theme — mirrors the desktop client's light and dark dictionaries.</p>
+                    <div class="theme-choices">
+                        <button class="theme-choice @(Theme.Current == "dark" ? "active" : "")" @onclick='() => SetTheme("dark")'>☾ Dark</button>
+                        <button class="theme-choice @(Theme.Current == "light" ? "active" : "")" @onclick='() => SetTheme("light")'>☀ Light</button>
+                    </div>
+                }
+                else if (cat == "About")
+                {
+                    <h3>About</h3>
+                    <p class="muted">
+                        Kanban Tasker — personal kanban boards. Blazor WebAssembly + WinUI 3, .NET 10,
+                        SQL Server / SQL Server Express. The web and desktop clients share one API and one design language.
+                    </p>
+                    <a href="https://github.com/alexers1/KanbanTasker" target="_blank" rel="noopener">github.com/alexers1/KanbanTasker</a>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private record Cat(string Key, string Icon, string Label);
+    private readonly Cat[] Cats =
+    {
+        new Cat("Connection", "🔌", "Connection"),
+        new Cat("Storage", "🗄", "Storage"),
+        new Cat("Backup", "💾", "Backup & import"),
+        new Cat("Appearance", "🎨", "Appearance"),
+        new Cat("About", "ℹ", "About"),
+    };
+
+    private string cat = "Connection";
+    private bool busy;
+    private string connText = "checking…";
+    private DatabaseUsage usage = new();
+    private string usageText = "Checking database size…";
+    private string archiveText = "";
+    private string backupPath = "";
+    private string backupText = "";
+
+    private string UsagePercentCss => $"{Math.Min(100, Math.Max(0, usage.Percent)):0.##}%";
+
+    protected override async System.Threading.Tasks.Task OnInitializedAsync()
+    {
+        connText = await Api.IsReachableAsync() ? "connected ✔" : "not reachable ✖";
+        await LoadUsage();
+    }
+
+    private async System.Threading.Tasks.Task LoadUsage()
+    {
+        try
+        {
+            usage = await Api.GetUsageAsync();
+            usageText = $"{usage.SizeMB:N1} MB of {usage.LimitMB / 1024:N0} GB Express limit ({usage.Percent:F1}%)";
+        }
+        catch (Exception ex) { usageText = "Could not read database size: " + ex.Message; }
+    }
+
+    private async System.Threading.Tasks.Task Archive()
+    {
+        busy = true; archiveText = "Archiving completed tasks…";
+        try
+        {
+            int n = await Api.ArchiveCompletedAsync();
+            archiveText = n > 0 ? $"Archived {n} completed task(s) to the archive database." : "No completed tasks to archive.";
+            await LoadUsage();
+        }
+        catch (Exception ex) { archiveText = "Archive failed: " + ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async System.Threading.Tasks.Task Backup()
+    {
+        if (string.IsNullOrWhiteSpace(backupPath)) { backupText = "Enter a server file path first."; return; }
+        busy = true; backupText = "Backing up database…";
+        try { backupText = await Api.BackupAsync(backupPath.Trim()); }
+        catch (Exception ex) { backupText = "Backup failed: " + ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async System.Threading.Tasks.Task Import()
+    {
+        if (string.IsNullOrWhiteSpace(backupPath)) { backupText = "Enter the server .bak path first."; return; }
+        busy = true; backupText = "Importing backup…";
+        try { backupText = await Api.ImportAsync(backupPath.Trim()); }
+        catch (Exception ex) { backupText = "Import failed: " + ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async System.Threading.Tasks.Task SetTheme(string t) => await Theme.SetAsync(t);
+}

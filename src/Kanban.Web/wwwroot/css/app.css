@@ -424,6 +424,79 @@ a { color: var(--accent); text-decoration: none; }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
+/* ---- Settings dialog (category list + detail, mirrors the WinUI module) ---- */
+.settings-modal { width: min(680px, 94vw); }
+.settings-body { display: flex; gap: 16px; min-height: 340px; }
+.settings-cats {
+  width: 172px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 10px;
+  border-right: 1px solid var(--divider);
+}
+.settings-cat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13.5px;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+.settings-cat:hover { background: var(--control-bg-hover); color: var(--text-primary); }
+.settings-cat.active {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.settings-cat .ico { width: 18px; text-align: center; }
+.settings-detail { flex: 1; min-width: 0; }
+.settings-detail h3 { margin: 2px 0 12px; font-size: 15px; }
+.settings-detail .muted { color: var(--text-secondary); font-size: 13px; line-height: 1.55; margin: 0 0 12px; }
+.settings-detail code {
+  background: var(--control-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.usage-bar {
+  height: 8px;
+  background: var(--control-bg);
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.usage-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  border-radius: 5px;
+  transition: width 0.3s ease;
+}
+.theme-choices { display: flex; gap: 10px; }
+.theme-choice {
+  flex: 1;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.theme-choice:hover { background: var(--control-bg-hover); }
+.theme-choice.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); font-weight: 600; }
+
 /* ---- Misc ---------------------------------------------------------------- */
 
 .empty-state {
