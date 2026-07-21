@@ -1,10 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
+using KanbanTasker.Model;
 using KanbanTasker.Model.Services;
-using KanbanTasker.Services;
+using Kanban_WinUI.Services.Api;
 using System;
 using System.IO;
-using System.Threading.Tasks;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 // Win32 MessageBox for fatal startup errors (visible even when no XAML window exists yet).
 using System.Runtime.InteropServices;
@@ -12,7 +15,8 @@ using System.Runtime.InteropServices;
 namespace Kanban_WinUI;
 
 /// <summary>
-/// Single-user Kanban app backed by a local SQL Server Express database.
+/// Thin Kanban client. All data goes through the REST API (see Services/Api); the client
+/// holds no database connection — it only knows the API base URL (ApiConfig).
 /// </summary>
 public partial class App : Application
 {
@@ -20,22 +24,19 @@ public partial class App : Application
 
     public static ServiceProvider? ServiceProvider { get; private set; }
 
-    /// <summary>
-    /// The main application window. Dialogs need its XamlRoot in WinUI 3.
-    /// </summary>
+    /// <summary>The main application window. Dialogs need its XamlRoot in WinUI 3.</summary>
     public static Window? MainAppWindow { get; private set; }
 
-    /// <summary>
-    /// Local per-user app data folder (settings, scheduled reminders).
-    /// Plain folder — no MSIX ApplicationData dependency.
-    /// </summary>
+    /// <summary>Local per-user app data folder (settings, reminders, first-run marker).</summary>
     public static readonly string AppDataFolder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kanban.WinUI");
 
+    /// <summary>Shared HttpClient for the API services (base address set from ApiConfig).</summary>
+    private static HttpClient? _http;
+
     public App()
     {
-        // The Windows App Runtime was already verified and bootstrapped by Program.Main's
-        // environment pre-check, so the app only reaches here on a supported machine.
+        // The Windows App Runtime was verified and bootstrapped by Program.Main's pre-check.
         AppendStartupLog("App() constructor entered");
 
         InitializeComponent();
@@ -44,10 +45,29 @@ public partial class App : Application
         {
             Directory.CreateDirectory(AppDataFolder);
 
+            ApiConfig.Current = ApiConfig.Load() ?? new ApiConfig();
+            AppendStartupLog("API base URL: " + ApiConfig.Current.BaseUrl);
+
+            var json = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                ReferenceHandler = ReferenceHandler.IgnoreCycles
+            };
+            _http = new HttpClient { BaseAddress = new Uri(ApiConfig.Current.NormalizedBaseUrl()) };
+
             var services = new ServiceCollection();
 
-            // Data layer: SQL Server Express (the app's only backend)
-            services.AddKanbanServices();
+            // Data layer: REST API over HttpClient (no SQL/EF in the client)
+            services.AddSingleton(_http);
+            services.AddSingleton(json);
+            services.AddSingleton<IBoardServices>(_ => new ApiBoardServices(_http, json));
+            services.AddSingleton<ITaskServices>(_ => new ApiTaskServices(_http, json));
+            services.AddSingleton<IDatabaseServices>(_ => new ApiDatabaseServices(_http, json));
+            services.AddSingleton<IServiceManifest>(sp => new ApiServiceManifest(
+                sp.GetRequiredService<ITaskServices>(),
+                sp.GetRequiredService<IBoardServices>(),
+                sp.GetRequiredService<IDatabaseServices>()));
 
             // UI services
             services.AddSingleton<INavigationService, Services.NavigationService>();
@@ -69,134 +89,42 @@ public partial class App : Application
         }
     }
 
-    /// <summary>
-    /// Invoked when the application is launched.
-    /// </summary>
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
         AppendStartupLog("OnLaunched entered");
 
         try
         {
-            // Load connection settings from appsettings.json and verify them.
-            // Missing or failing settings open the database setup window instead
-            // of the app, so this deploys to any computer with SQL Server.
-            var config = KanbanTasker.Services.DatabaseConfig.Load();
-            string? connectError = config == null
-                ? "No saved configuration was found."
-                : config.TestConnection();
+            _window = new MainWindow();
+            MainAppWindow = _window;
+            _window.Activate();
+            AppendStartupLog("MainWindow created and activated");
 
-            if (config != null && connectError == null)
+            // Load boards from the API off the constructor (network I/O), then populate the shell.
+            _window.DispatcherQueue.TryEnqueue(async () =>
             {
-                ApplyConfigAndStart(config);
-            }
-            else
-            {
-                AppendStartupLog("DB config missing or not working: " + connectError);
-                var configWindow = new Views.DatabaseConfigWindow(config, config == null ? null : connectError);
-                configWindow.ConfigSaved += (_, savedConfig) =>
+                try
                 {
-                    ApplyConfigAndStart(savedConfig);
-                    configWindow.Close();
-                };
-                configWindow.Activate();
-            }
+                    await ((MainWindow)_window).LoadBoardsAndShowAsync();
+                }
+                catch (Exception ex)
+                {
+                    AppendStartupLog("Board load failed: " + ex.Message);
+                    try
+                    {
+                        ServiceProvider!.GetRequiredService<IAppNotificationService>()
+                            .DisplayNotificationAsync(
+                                $"Could not reach the API at {ApiConfig.Current?.BaseUrl} — {ex.Message}. " +
+                                "Make sure the Kanban API is running.", 10000);
+                    }
+                    catch { }
+                }
+            });
         }
         catch (Exception ex)
         {
             AppendStartupLog("FATAL: Exception during startup: " + ex);
             LogAndShowError("Failed to start Kanban Tasker.", ex);
-        }
-    }
-
-    /// <summary>Runs the normal startup once a verified database configuration exists.</summary>
-    private void ApplyConfigAndStart(KanbanTasker.Services.DatabaseConfig config)
-    {
-        KanbanTasker.Services.DatabaseConfig.Current = config;
-        ServiceCollectionExtensions.ConnectionString = config.BuildConnectionString();
-        AppendStartupLog($"DB config applied: {config.Server} / {config.Database}");
-
-        try
-        {
-            // Ensure the SQL Server schema exists BEFORE MainWindow: its ctor resolves
-            // MainViewModel, which immediately queries boards (tblBoards/tblColumns/tblTasks).
-            try
-            {
-                using var scope = ServiceProvider!.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<KanbanTasker.Services.Database.Db>();
-                db.Database.EnsureCreated();
-
-                // Lightweight schema upgrade: EnsureCreated never alters existing tables
-                Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(
-                    db.Database,
-                    "IF COL_LENGTH('tblTasks','Attachments') IS NULL " +
-                    "ALTER TABLE tblTasks ADD Attachments nvarchar(max) NOT NULL DEFAULT N''");
-
-                AppendStartupLog("DB EnsureCreated + schema upgrade completed (SQL Server)");
-            }
-            catch (Exception dbEx)
-            {
-                AppendStartupLog("DB EnsureCreated failed: " + dbEx.Message);
-                LogAndShowError(
-                    "Could not reach the SQL Server database.\n\n" +
-                    @"Check that SQL Server Express is running (service 'SQL Server (SQLEXPRESS)') " +
-                    "and that the KanbanTasker database is accessible.",
-                    dbEx);
-            }
-
-            _window = new MainWindow();
-            MainAppWindow = _window;
-            _window.Activate();
-
-            AppendStartupLog("MainWindow created and activated");
-
-            // SQL Server Express has a per-database size limit (50 GB since 2025, 10 GB
-            // before): check usage in the background and warn so the user can archive
-            // completed tasks in Settings.
-            _ = Task.Run(() =>
-            {
-                try
-                {
-                    var usage = ServiceProvider!.GetRequiredService<IDatabaseServices>().GetDatabaseUsage();
-                    AppendStartupLog($"DB usage: {usage.SizeMB} MB ({usage.Percent:F1}% of the {usage.LimitMB / 1024:F0} GB Express limit)");
-                    if (usage.Percent >= 80)
-                    {
-                        _window?.DispatcherQueue.TryEnqueue(() =>
-                            ServiceProvider!.GetRequiredService<IAppNotificationService>().DisplayNotificationAsync(
-                                $"Database is at {usage.Percent:F0}% of the SQL Server Express {usage.LimitMB / 1024:F0} GB limit — " +
-                                "archive completed tasks in Settings to free space.", 8000));
-                    }
-                }
-                catch (Exception usageEx)
-                {
-                    AppendStartupLog("DB usage check failed (non-fatal): " + usageEx.Message);
-                }
-            });
-
-            // First-run welcome dialog (simple file marker, works unpackaged).
-            // Must run on the UI thread: ContentDialog.ShowAsync requires it.
-            _window.DispatcherQueue.TryEnqueue(async () =>
-            {
-                try
-                {
-                    string firstRunMarker = Path.Combine(AppDataFolder, "firstrun.done");
-                    if (!File.Exists(firstRunMarker))
-                    {
-                        File.WriteAllText(firstRunMarker, DateTime.Now.ToString("o"));
-                        var dialogService = ServiceProvider!.GetRequiredService<IDialogService>();
-                        await dialogService.ShowFirstRunDialog();
-                    }
-                }
-                catch (Exception asyncEx)
-                {
-                    AppendStartupLog("First-run dialog error (non-fatal): " + asyncEx.Message);
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            AppendStartupLog("FATAL: Exception while creating/activating MainWindow: " + ex);
-            LogAndShowError("Failed to create or activate the main application window.", ex);
         }
     }
 

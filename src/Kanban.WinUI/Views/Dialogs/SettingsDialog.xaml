@@ -99,28 +99,19 @@
                 <Grid>
                     <!-- ============ Data saving: SQL Server connection ============ -->
                     <StackPanel x:Name="PanelDataSaving" Spacing="8">
-                        <TextBlock FontWeight="SemiBold" Text="SQL Server connection" />
+                        <TextBlock FontWeight="SemiBold" Text="API connection" />
                         <TextBlock
                             FontSize="12"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="Where your boards are stored. Changes are verified before they are saved to appsettings.json; the app switches to the new database when Settings closes."
+                            Text="The client reads and writes all data through the Kanban API. Enter the API address; it is verified before it is saved. A new address takes effect after restarting the app."
                             TextWrapping="Wrap" />
-                        <TextBox x:Name="CfgServerBox" Header="Server" />
-                        <TextBox x:Name="CfgDatabaseBox" Header="Database" />
-                        <ToggleSwitch
-                            x:Name="CfgWindowsAuthToggle"
-                            Header="Authentication"
-                            OffContent="SQL Server login"
-                            OnContent="Windows authentication"
-                            Toggled="CfgWindowsAuthToggle_Toggled" />
-                        <TextBox x:Name="CfgUserBox" Header="User name" />
-                        <PasswordBox
-                            x:Name="CfgPasswordBox"
-                            Header="Password"
-                            PasswordRevealMode="Peek" />
+                        <TextBox
+                            x:Name="CfgApiUrlBox"
+                            Header="API base URL"
+                            PlaceholderText="http://localhost:5000" />
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <Button
-                                Click="BtnTestSaveConnection_Click"
+                                Click="BtnTestSaveApi_Click"
                                 Style="{ThemeResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <FontIcon FontSize="14" Glyph="&#xE8CE;" />

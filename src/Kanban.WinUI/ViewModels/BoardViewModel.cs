@@ -7,11 +7,14 @@ using Kanban_WinUI.Models;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Kanban_WinUI.ViewModels
 {
     /// <summary>
-    /// BoardViewModel: handles columns, tasks, editing, drag, tags, reminders, dates for a board.
+    /// BoardViewModel: columns, tasks, editing, drag, tags, reminders, dates for a board.
+    /// Data access is async over the REST API — <see cref="InitializeAsync"/> loads the
+    /// board's columns and tasks (the constructor no longer performs network I/O).
     /// </summary>
     public partial class BoardViewModel : ObservableObject
     {
@@ -25,10 +28,8 @@ namespace Kanban_WinUI.ViewModels
         private readonly ITimerService _timerService;
         private PresentationBoard _board;
 
-        // For cancel revert 1:1
         public PresentationTask OriginalTask { get; set; }
 
-        // For column editor 1:1 (used if flyout sets via VM instead of direct col)
         public string NewColumnName { get; set; } = "";
         public int NewColumnMax { get; set; }
 
@@ -52,7 +53,7 @@ namespace Kanban_WinUI.ViewModels
 
         public ObservableCollection<string> ColorKeys { get; } = new() { "Low", "Medium", "High" };
 
-        public ObservableCollection<string> ReminderTimes { get; } = new() { "None", "At Time of Due Date", "5 Minutes Before", "10 Minutes Before", "15 Minutes Before", "1 Hour Before", "2 Hours Before", "1 Day Before", "2 Days Before" }; // from original
+        public ObservableCollection<string> ReminderTimes { get; } = new() { "None", "At Time of Due Date", "5 Minutes Before", "10 Minutes Before", "15 Minutes Before", "1 Hour Before", "2 Hours Before", "1 Day Before", "2 Days Before" };
 
         public ObservableCollection<string> SuggestedTagsCollection { get; } = new();
 
@@ -69,7 +70,7 @@ namespace Kanban_WinUI.ViewModels
         private string _selectedReminderTime = "None";
 
         [ObservableProperty]
-        private string _timeDue = "";  // port for original TimeDue in date info / pane
+        private string _timeDue = "";
 
         [ObservableProperty]
         private bool _isEditingTask;
@@ -89,15 +90,14 @@ namespace Kanban_WinUI.ViewModels
             _timerService = timerService;
             CurrentTask = new PresentationTask(new TaskDTO());
 
-            LoadColumnsAndTasks();
+            // No network I/O in the constructor — the owner calls InitializeAsync().
 
-            // Timer for date info + due toast checks (wired to global TimerService)
             _timerService.Tick += (s, e) =>
             {
                 UpdateDateInformation();
                 _toastService.CheckAndShowDueToasts();
                 foreach (var task in _board.Tasks)
-                    task.NotifyDateDisplaysChanged();  // refresh overdue chips / card age
+                    task.NotifyDateDisplaysChanged();
             };
             _timerService.Start();
         }
@@ -106,26 +106,23 @@ namespace Kanban_WinUI.ViewModels
 
         public ObservableCollection<PresentationTask> Tasks => _board.Tasks;
 
-        public void LoadColumnsAndTasks()
+        /// <summary>Loads columns and tasks for this board from the API.</summary>
+        public Task InitializeAsync() => LoadColumnsAndTasksAsync();
+
+        public async Task LoadColumnsAndTasksAsync()
         {
             Columns.Clear();
-            var cols = _manifest.BoardServices.GetColumns(_board.Id);
+            var cols = await _manifest.BoardServices.GetColumnsAsync(_board.Id);
             foreach (var colDto in cols.OrderBy(c => c.Position))
-            {
                 Columns.Add(new PresentationColumn(colDto));
-            }
 
-            // Ensure tasks are loaded on the board (in real, from service)
             if (_board.Tasks.Count == 0)
             {
-                var allTasks = _manifest.TaskServices.GetTasks();
+                var allTasks = await _manifest.TaskServices.GetTasksAsync();
                 foreach (var t in allTasks.Where(t => t.BoardId == _board.Id).OrderBy(t => t.ColumnIndex))
-                {
                     _board.Tasks.Add(new PresentationTask(t));
-                }
             }
 
-            // Update per-column task counts for WIP in headers + per-column Tasks collection for native WinUI Kanban (no Syncfusion dependency)
             foreach (var col in Columns)
             {
                 col.TaskCount = _board.Tasks.Count(t => t.Category == col.ColumnName);
@@ -142,7 +139,6 @@ namespace Kanban_WinUI.ViewModels
         [RelayCommand]
         private void NewTask(PresentationColumn column)
         {
-            // Enforce max task limit (original SfKanban respected column MaximumLimit / max task limit)
             if (column == null || column.TaskCount >= column.MaxTaskLimit) return;
 
             IsEditingTask = true;
@@ -167,19 +163,15 @@ namespace Kanban_WinUI.ViewModels
         }
 
         [RelayCommand]
-        private void SaveTask()
+        private async Task SaveTaskAsync()
         {
             IsEditingTask = false;
             PaneTitle = "";
             IsPaneOpen = false;
 
-            // 1:1: stop any per-task timer (original had _dateCheckTimer?.Stop())
-            // (global timer in this port keeps running for all)
-
             if (CurrentTask == null)
                 return;
 
-            // Sync dates from pane (VM observables) to task for DTO
             CurrentTask.DueDate = DueDate;
             CurrentTask.StartDate = StartDate;
             CurrentTask.FinishDate = FinishDate;
@@ -194,10 +186,10 @@ namespace Kanban_WinUI.ViewModels
                 dto.DateCreated = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss");
             }
 
-            var result = _manifest.TaskServices.SaveTask(dto);
+            var result = await _manifest.TaskServices.SaveTaskAsync(dto);
             if (result.Success)
             {
-                dto.Id = result.Entity.Id; // ensure
+                dto.Id = result.Entity.Id;
                 if (isNew)
                 {
                     CurrentTask.Id = dto.Id;
@@ -205,8 +197,7 @@ namespace Kanban_WinUI.ViewModels
                     _board.Tasks.Add(CurrentTask);
                 }
 
-                // Refresh counts etc (keeps in-mem consistent)
-                LoadColumnsAndTasks();
+                await LoadColumnsAndTasksAsync();
             }
 
             if (IsReminderSet(CurrentTask))
@@ -223,10 +214,6 @@ namespace Kanban_WinUI.ViewModels
                    task.ReminderTime != "";
         }
 
-        /// <summary>
-        /// Schedules a toast notification using <see cref="IToastService"/> if the current task 
-        /// has a selected due date, time due, reminder time when called.
-        /// </summary>
         private void PrepareAndScheduleToastNotification()
         {
             var dueDate = CurrentTask.DueDate;
@@ -242,68 +229,44 @@ namespace Kanban_WinUI.ViewModels
             if (dueDate == null)
                 return;
 
-            DateTimeOffset? timeDue = null;
+            DateTimeOffset? timeDue;
             if (!string.IsNullOrEmpty(timeDueStr) && TimeSpan.TryParse(timeDueStr, out var ts))
-            {
                 timeDue = dueDate.Value.Date + ts;
-            }
             else
-            {
                 timeDue = dueDate;
-            }
 
             if (timeDue == null)
                 return;
 
             var taskDueDate = timeDue.Value;
-
             var scheduledTime = taskDueDate;
             switch (reminderTime)
             {
-                case "At Time of Due Date":
-                    break;
-                case "5 Minutes Before":
-                    scheduledTime = taskDueDate.AddMinutes(-5);
-                    break;
-                case "10 Minutes Before":
-                    scheduledTime = taskDueDate.AddMinutes(-10);
-                    break;
-                case "15 Minutes Before":
-                    scheduledTime = taskDueDate.AddMinutes(-15);
-                    break;
-                case "1 Hour Before":
-                    scheduledTime = taskDueDate.AddHours(-1);
-                    break;
-                case "2 Hours Before":
-                    scheduledTime = taskDueDate.AddHours(-2);
-                    break;
-                case "1 Day Before":
-                    scheduledTime = taskDueDate.AddDays(-1);
-                    break;
-                case "2 Days Before":
-                    scheduledTime = taskDueDate.AddDays(-2);
-                    break;
+                case "At Time of Due Date": break;
+                case "5 Minutes Before": scheduledTime = taskDueDate.AddMinutes(-5); break;
+                case "10 Minutes Before": scheduledTime = taskDueDate.AddMinutes(-10); break;
+                case "15 Minutes Before": scheduledTime = taskDueDate.AddMinutes(-15); break;
+                case "1 Hour Before": scheduledTime = taskDueDate.AddHours(-1); break;
+                case "2 Hours Before": scheduledTime = taskDueDate.AddHours(-2); break;
+                case "1 Day Before": scheduledTime = taskDueDate.AddDays(-1); break;
+                case "2 Days Before": scheduledTime = taskDueDate.AddDays(-2); break;
             }
 
             if (scheduledTime < DateTimeOffset.Now)
-                scheduledTime = DateTimeOffset.Now.AddSeconds(5); // avoid past
+                scheduledTime = DateTimeOffset.Now.AddSeconds(5);
 
             _toastService.ScheduleToast(CurrentTask.ToTaskDTO(), scheduledTime, taskDueDate);
         }
 
         private bool CheckIfPastDue()
         {
-            // Use the pane's live values (DueDate/TimeDue observables) so the
-            // warning updates while the user is editing, before saving.
             var dueDate = DueDate ?? CurrentTask?.DueDate;
             if (dueDate == null) return false;
 
             var timeDueStr = string.IsNullOrEmpty(TimeDue) ? CurrentTask?.TimeDue : TimeDue;
             DateTimeOffset checkTime = dueDate.Value;
             if (!string.IsNullOrEmpty(timeDueStr) && TimeSpan.TryParse(timeDueStr, out var ts))
-            {
                 checkTime = dueDate.Value.Date + ts;
-            }
             return checkTime < DateTimeOffset.Now;
         }
 
@@ -311,7 +274,6 @@ namespace Kanban_WinUI.ViewModels
 
         partial void OnTimeDueChanged(string value) => IsPassedDue = CheckIfPastDue();
 
-        /// <summary>True when the pane's finish date is earlier than its start date (validation hint).</summary>
         public bool IsFinishBeforeStart =>
             StartDate.HasValue && FinishDate.HasValue && FinishDate.Value.Date < StartDate.Value.Date;
 
@@ -326,9 +288,7 @@ namespace Kanban_WinUI.ViewModels
             DateTimeOffset? dateCreated = CurrentTask.DateCreated;
             DateTimeOffset? today = DateTimeOffset.Now;
             DateTimeOffset? startDate = CurrentTask.StartDate;
-            DateTimeOffset? finishDate = CurrentTask.FinishDate;
 
-            // 1:1 set DaysWorkedOn (from start) and full DaysSinceCreation (d,hrs,min)
             if (startDate != null)
             {
                 TimeSpan? timeSpan = today - startDate;
@@ -340,82 +300,63 @@ namespace Kanban_WinUI.ViewModels
             {
                 TimeSpan? timeSpan = today - dateCreated;
                 if (timeSpan != null)
-                {
                     CurrentTask.DaysSinceCreation = string.Format(
                         "{0}d, {1}hrs, {2}min",
-                        timeSpan.Value.Days,
-                        timeSpan.Value.Hours,
-                        timeSpan.Value.Minutes);
-                }
+                        timeSpan.Value.Days, timeSpan.Value.Hours, timeSpan.Value.Minutes);
             }
         }
 
         [RelayCommand]
-        public void UpdateColumn(string originalName)
+        public async Task UpdateColumnAsync(string originalName)
         {
-            // 1:1 full from original UpdateColumn
             string newColName = NewColumnName;
             int newColMax = NewColumnMax;
 
-            var column = Columns.FirstOrDefault(c => c.ColumnName.Equals(originalName));
-            if (column == null)
-                column = Columns.FirstOrDefault(c => c.ColumnName.Equals(newColName)); // in case live bind already mutated the name on the col ref
+            var column = Columns.FirstOrDefault(c => c.ColumnName.Equals(originalName))
+                         ?? Columns.FirstOrDefault(c => c.ColumnName.Equals(newColName));
             if (column == null) return;
 
             if (string.IsNullOrEmpty(newColName))
                 newColName = originalName;
 
-            // Set new column name and task limits (in case flyout/VM state used)
             column.ColumnName = newColName;
             column.MaxTaskLimit = newColMax;
 
-            // Update column in database
-            _manifest.BoardServices.SaveColumn(column.ToColumnDTO());
+            await _manifest.BoardServices.SaveColumnAsync(column.ToColumnDTO());
 
-            // Update categories for tasks in the column (propagate rename)
             var tasksCopy = Board.Tasks.ToList();
             foreach (PresentationTask task in tasksCopy)
             {
                 if (task.Category == originalName)
                 {
                     task.Category = newColName;
-                    _manifest.TaskServices.UpdateColumnName(task.Id, task.Category);
+                    await _manifest.TaskServices.UpdateColumnNameAsync(task.Id, task.Category);
                 }
             }
             Board.Tasks = new ObservableCollection<PresentationTask>(tasksCopy.OrderBy(x => x.ColumnIndex));
 
-            // Update category if creating new task in pane
-            if (IsPaneOpen && PaneTitle.Equals("New Task"))
-            {
-                if (CurrentTask.Category.Equals(originalName))
-                    CurrentTask.Category = newColName;
-            }
+            if (IsPaneOpen && PaneTitle.Equals("New Task") && CurrentTask.Category.Equals(originalName))
+                CurrentTask.Category = newColName;
 
             NewColumnName = "";
-            LoadColumnsAndTasks();
+            await LoadColumnsAndTasksAsync();
         }
 
-        public void UpdateCardColumn(string targetCategory, PresentationTask selectedCardModel, int targetIndex)
+        /// <summary>Move a card to another column (drag drop across columns), then refresh.</summary>
+        public async Task UpdateCardColumnAsync(string targetCategory, PresentationTask selectedCardModel, int targetIndex)
         {
-            var task = selectedCardModel; // or find in collection
-            task.Category = targetCategory;
-            task.ColumnIndex = targetIndex;
+            selectedCardModel.Category = targetCategory;
+            selectedCardModel.ColumnIndex = targetIndex;
 
-            _manifest.TaskServices.UpdateColumnData(task.ToTaskDTO());
-
-            // Refresh
-            LoadColumnsAndTasks();
+            await _manifest.TaskServices.UpdateColumnDataAsync(selectedCardModel.ToTaskDTO());
+            await LoadColumnsAndTasksAsync();
         }
 
-        public void UpdateCardIndex(int id, int currentCardIndex)
-        {
-            _manifest.TaskServices.UpdateCardIndex(id, currentCardIndex);
-            // Refresh or update local
-            LoadColumnsAndTasks();
-        }
+        /// <summary>Persist a card's index without reloading (used for batch reorder).</summary>
+        public Task SaveCardIndexAsync(int id, int currentCardIndex) =>
+            _manifest.TaskServices.UpdateCardIndexAsync(id, currentCardIndex);
 
-        // Move task to adjacent column (for non-drag buttons)
-        public void MoveTaskToColumn(PresentationTask task, int direction)
+        private async Task MoveTaskToColumnAsync(PresentationTask task, int direction)
         {
             if (task == null || Columns.Count == 0) return;
 
@@ -428,30 +369,20 @@ namespace Kanban_WinUI.ViewModels
 
             var newCol = Columns[newPos];
             task.Category = newCol.ColumnName;
-            task.ColumnIndex = 0; // reset index for simplicity
+            task.ColumnIndex = 0;
 
-            _manifest.TaskServices.UpdateColumnData(task.ToTaskDTO());
-            LoadColumnsAndTasks();
-        }
-
-        // For column header buttons
-        [RelayCommand]
-        public void NewTaskForColumn(PresentationColumn column)
-        {
-            NewTask(column);
+            await _manifest.TaskServices.UpdateColumnDataAsync(task.ToTaskDTO());
+            await LoadColumnsAndTasksAsync();
         }
 
         [RelayCommand]
-        public void MoveTaskLeft(PresentationTask task)
-        {
-            MoveTaskToColumn(task, -1);
-        }
+        public void NewTaskForColumn(PresentationColumn column) => NewTask(column);
 
         [RelayCommand]
-        public void MoveTaskRight(PresentationTask task)
-        {
-            MoveTaskToColumn(task, 1);
-        }
+        public Task MoveTaskLeftAsync(PresentationTask task) => MoveTaskToColumnAsync(task, -1);
+
+        [RelayCommand]
+        public Task MoveTaskRightAsync(PresentationTask task) => MoveTaskToColumnAsync(task, 1);
 
         [RelayCommand]
         public void EditTask(int id)
@@ -464,7 +395,6 @@ namespace Kanban_WinUI.ViewModels
             if (task != null)
             {
                 CurrentTask = task;
-                // sync dates to pane
                 DueDate = task.DueDate;
                 StartDate = task.StartDate;
                 FinishDate = task.FinishDate;
@@ -474,26 +404,23 @@ namespace Kanban_WinUI.ViewModels
                 RefreshSuggestedTags();
                 UpdateDateInformation();
 
-                // clone a copy of CurrentTask so we can restore if user cancels (1:1)
                 OriginalTask = new PresentationTask(CurrentTask.ToTaskDTO());
-
                 PrepareAndScheduleToastNotification();
             }
         }
 
         [RelayCommand]
-        public void DeleteTask(int id)
+        public async Task DeleteTaskAsync(int id)
         {
-            // 1:1 stop timer if
             var task = Board.Tasks.FirstOrDefault(t => t.Id == id);
             if (task == null) return;
 
-            var result = _manifest.TaskServices.DeleteTask(id);
+            var result = await _manifest.TaskServices.DeleteTaskAsync(id);
 
             if (result.Success)
             {
                 Board.Tasks.Remove(task);
-                UpdateCardIndexesAfterDeletion(task);
+                await UpdateCardIndexesAfterDeletionAsync(task);
                 CurrentTask = Board.Tasks.LastOrDefault();
 
                 if (IsReminderSet(task))
@@ -506,15 +433,13 @@ namespace Kanban_WinUI.ViewModels
                 _appNotificationService?.DisplayNotificationAsync("Task failed to be deleted. Please try again or restart the application.", NOTIFICATION_DURATION);
             }
 
-            LoadColumnsAndTasks();
+            await LoadColumnsAndTasksAsync();
         }
 
-        private void UpdateCardIndexesAfterDeletion(PresentationTask deletedTask)
+        private async Task UpdateCardIndexesAfterDeletionAsync(PresentationTask deletedTask)
         {
             int startIndex = deletedTask.ColumnIndex;
 
-            // If we do not sort by ColumnIndex,
-            // the tasks in Board.Tasks will be in unsorted order when assigning startIndex 
             var sortedTasks = Board.Tasks
                 .Where(x => x.Category == deletedTask.Category && x.ColumnIndex > deletedTask.ColumnIndex)
                 .OrderBy(x => x.ColumnIndex);
@@ -522,50 +447,47 @@ namespace Kanban_WinUI.ViewModels
             foreach (PresentationTask otherTask in sortedTasks)
             {
                 otherTask.ColumnIndex = startIndex++;
-                UpdateCardIndex(otherTask.Id, otherTask.ColumnIndex);
+                await SaveCardIndexAsync(otherTask.Id, otherTask.ColumnIndex);
             }
         }
 
-        public void DeleteColumn(PresentationColumn col)
+        public async Task DeleteColumnAsync(PresentationColumn col)
         {
             if (col == null) return;
 
-            // 1:1: original DeleteColumn also reindexes positions of remaining columns
-            var result = _manifest.BoardServices.DeleteColumn(col.ToColumnDTO());
+            var result = await _manifest.BoardServices.DeleteColumnAsync(col.ToColumnDTO());
             if (result.Success)
             {
                 Columns.Remove(col);
 
-                // Update other columns positions
                 var deletedItemsPosition = col.Position;
                 for (int i = deletedItemsPosition; i < Columns.Count; i++)
                 {
                     var column = Columns[i];
                     column.Position -= 1;
-                    _manifest.BoardServices.UpdateColumnIndex(column.ToColumnDTO());
+                    await _manifest.BoardServices.UpdateColumnIndexAsync(column.ToColumnDTO());
                 }
 
                 _appNotificationService?.DisplayNotificationAsync("Column deleted successfully", NOTIFICATION_DURATION);
             }
 
-            LoadColumnsAndTasks();
+            await LoadColumnsAndTasksAsync();
         }
 
-        public PresentationColumn CreateColumn(KanbanTasker.Model.Dto.ColumnDTO colDto)
+        public async Task<PresentationColumn> CreateColumnAsync(ColumnDTO colDto)
         {
-            var col = new PresentationColumn(colDto);
-            // Use service (old had CreateColumn)
-            _manifest.BoardServices.CreateColumn(colDto);
+            var created = await _manifest.BoardServices.CreateColumnAsync(colDto);
+            var col = new PresentationColumn(created);
             Columns.Add(col);
             return col;
         }
 
         [RelayCommand]
-        private void DeleteCurrentTask()
+        private async Task DeleteCurrentTaskAsync()
         {
             if (CurrentTask != null)
             {
-                DeleteTask(CurrentTask.Id);
+                await DeleteTaskAsync(CurrentTask.Id);
                 IsPaneOpen = false;
             }
         }
@@ -573,7 +495,6 @@ namespace Kanban_WinUI.ViewModels
         [RelayCommand]
         public void CancelEdit()
         {
-            // Revert CurrentTask to OriginalTask clone (for edit cancel), re-order, reschedule toast if had reminder
             IsProgressRingActive = true;
             IsEditingTask = false;
             PaneTitle = "";
@@ -586,7 +507,6 @@ namespace Kanban_WinUI.ViewModels
                 {
                     var tempTask = new PresentationTask(OriginalTask.ToTaskDTO());
 
-                    // Update category if column name was changed while creating/editing
                     if (CurrentTask.Category != OriginalTask.Category)
                         tempTask.Category = CurrentTask.Category;
 
@@ -594,7 +514,6 @@ namespace Kanban_WinUI.ViewModels
                     Board.Tasks = new ObservableCollection<PresentationTask>(
                         Board.Tasks.OrderBy(x => x.ColumnIndex));
 
-                    // Check if a toast notification was deleted (restore)
                     if (OriginalTask.ReminderTime != DEFAULT_REMINDER_TIME)
                         PrepareAndScheduleToastNotification();
                 }
@@ -604,11 +523,7 @@ namespace Kanban_WinUI.ViewModels
         }
 
         [RelayCommand]
-        public void ToggleColumnCollapse()
-        {
-            IsColumnCollapsed = !IsColumnCollapsed;
-            // In full with SfKanban or custom, would hide/show the column UI
-        }
+        public void ToggleColumnCollapse() => IsColumnCollapsed = !IsColumnCollapsed;
 
         [RelayCommand]
         public void DeleteTag(string tag)
@@ -629,9 +544,6 @@ namespace Kanban_WinUI.ViewModels
             }
         }
 
-        /// <summary>
-        /// 1:1 port of original AddTag: adds unique, shows notif, updates board collection + suggestions.
-        /// </summary>
         public bool AddTag(string tag)
         {
             if (CurrentTask == null || string.IsNullOrWhiteSpace(tag)) return false;
@@ -666,13 +578,10 @@ namespace Kanban_WinUI.ViewModels
             }
             if (SuggestedTagsCollection.Count == 0)
             {
-                // defaults for better UX in sim
                 SuggestedTagsCollection.Add("bug");
                 SuggestedTagsCollection.Add("feature");
                 SuggestedTagsCollection.Add("urgent");
             }
         }
-
-        // Add more as needed for full port (e.g., suggested tags, AutoSuggest handlers, full timers)
     }
 }

@@ -423,3 +423,6 @@ appsettings.json
 
 # Claude Code local settings
 .claude/
+
+# Production connection string (server DB password) - never commit
+**/appsettings.Production.json

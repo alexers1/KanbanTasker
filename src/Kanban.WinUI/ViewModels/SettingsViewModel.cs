@@ -2,13 +2,14 @@ using System;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Kanban_WinUI.Services;
+using Kanban_WinUI.Services.Api;
 using KanbanTasker.Model.Services;
 
 namespace Kanban_WinUI.ViewModels
 {
     /// <summary>
-    /// Settings: database backup export, Express size-limit monitoring with archive,
-    /// and the attachments folder (paths in DB, files on disk).
+    /// Settings: API connection, database backup/import/archive (server-side over REST),
+    /// size-limit monitoring, and the local attachments folder.
     /// </summary>
     public partial class SettingsViewModel : ObservableObject
     {
@@ -36,60 +37,11 @@ namespace Kanban_WinUI.ViewModels
         [ObservableProperty]
         private string _attachmentStatusText = "";
 
-        /// <summary>Active server/database, from the verified appsettings.json configuration.</summary>
-        public string DatabaseInfo => KanbanTasker.Services.DatabaseConfig.Current is { } c
-            ? $"SQL Server — {c.Server}, database {c.Database}"
-            : "SQL Server";
-
         [ObservableProperty]
         private string _connectionStatusText = "";
 
-        /// <summary>Tests the currently active configuration (for the Data saving page).</summary>
-        public async Task LoadConnectionStatusAsync()
-        {
-            var cfg = KanbanTasker.Services.DatabaseConfig.Current;
-            if (cfg == null)
-            {
-                ConnectionStatusText = "Status: not configured";
-                return;
-            }
-            ConnectionStatusText = "Status: checking connection…";
-            string? error = await Task.Run(cfg.TestConnection);
-            ConnectionStatusText = error == null
-                ? "Status: connected ✔"
-                : "Status: NOT connected — " + error;
-        }
-
-        /// <summary>
-        /// Verifies new connection settings; on success saves appsettings.json and
-        /// switches the running app to them (boards reload when Settings closes).
-        /// </summary>
-        public async Task<bool> TestAndSaveConnectionAsync(KanbanTasker.Services.DatabaseConfig cfg)
-        {
-            IsBusy = true;
-            ConnectionStatusText = "Status: testing new settings…";
-            try
-            {
-                string? error = await Task.Run(cfg.TestConnection);
-                if (error != null)
-                {
-                    ConnectionStatusText = "Status: connection failed — " + error;
-                    return false;
-                }
-
-                cfg.Save();
-                KanbanTasker.Services.DatabaseConfig.Current = cfg;
-                KanbanTasker.Services.ServiceCollectionExtensions.ConnectionString = cfg.BuildConnectionString();
-                OnPropertyChanged(nameof(DatabaseInfo));
-                ConnectionStatusText = "Status: connected ✔ — saved. Boards reload when Settings closes.";
-                await LoadUsageAsync();
-                return true;
-            }
-            finally
-            {
-                IsBusy = false;
-            }
-        }
+        /// <summary>The API base URL the client is talking to.</summary>
+        public string DatabaseInfo => ApiConfig.Current is { } c ? $"API — {c.BaseUrl}" : "API — (not configured)";
 
         public SettingsViewModel(IDatabaseServices databaseServices, AttachmentService attachmentService)
         {
@@ -99,11 +51,56 @@ namespace Kanban_WinUI.ViewModels
             _ = LoadUsageAsync();
         }
 
+        /// <summary>Pings the current API (for the Data saving page status line).</summary>
+        public async Task LoadConnectionStatusAsync()
+        {
+            var cfg = ApiConfig.Current;
+            if (cfg == null)
+            {
+                ConnectionStatusText = "Status: not configured";
+                return;
+            }
+            ConnectionStatusText = "Status: checking API…";
+            string? error = await cfg.TestConnectionAsync();
+            ConnectionStatusText = error == null
+                ? "Status: connected ✔"
+                : "Status: NOT connected — " + error;
+        }
+
+        /// <summary>
+        /// Verifies a new API URL and, on success, saves it. The base address is applied on
+        /// the next launch (a running HttpClient keeps its base address), so we prompt to restart.
+        /// </summary>
+        public async Task<bool> TestAndSaveApiAsync(ApiConfig cfg)
+        {
+            IsBusy = true;
+            ConnectionStatusText = "Status: testing API…";
+            try
+            {
+                string? error = await cfg.TestConnectionAsync();
+                if (error != null)
+                {
+                    ConnectionStatusText = "Status: connection failed — " + error;
+                    return false;
+                }
+
+                cfg.Save();
+                ApiConfig.Current = cfg;
+                OnPropertyChanged(nameof(DatabaseInfo));
+                ConnectionStatusText = "Status: connected ✔ — saved. Restart the app to use the new API address.";
+                return true;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
         public async Task LoadUsageAsync()
         {
             try
             {
-                var usage = await Task.Run(_databaseServices.GetDatabaseUsage);
+                var usage = await _databaseServices.GetDatabaseUsageAsync();
                 UsagePercent = usage.Percent;
                 UsageText = $"{usage.SizeMB:N1} MB of {usage.LimitMB / 1024:N0} GB Express limit ({usage.Percent:F1}%)";
             }
@@ -113,14 +110,14 @@ namespace Kanban_WinUI.ViewModels
             }
         }
 
-        /// <summary>Backs up the database to the given .bak file path.</summary>
+        /// <summary>Backs up the database to the given .bak file path (server-side).</summary>
         public async Task<bool> BackupToAsync(string destPath)
         {
             IsBusy = true;
             StatusText = "Backing up database…";
             try
             {
-                await Task.Run(() => _databaseServices.BackupDB(destPath));
+                await _databaseServices.BackupDBAsync(destPath);
                 StatusText = $"Backup saved to {destPath}";
                 return true;
             }
@@ -142,7 +139,7 @@ namespace Kanban_WinUI.ViewModels
             StatusText = "Importing backup…";
             try
             {
-                string summary = await Task.Run(() => _databaseServices.ImportBackup(bakPath));
+                string summary = await _databaseServices.ImportBackupAsync(bakPath);
                 StatusText = summary + " Boards refresh when Settings closes.";
                 await LoadUsageAsync();
             }
@@ -163,7 +160,7 @@ namespace Kanban_WinUI.ViewModels
             ArchiveStatusText = "Archiving completed tasks…";
             try
             {
-                int moved = await Task.Run(_databaseServices.ArchiveCompletedTasks);
+                int moved = await _databaseServices.ArchiveCompletedTasksAsync();
                 ArchiveStatusText = moved > 0
                     ? $"Archived {moved} completed task(s) to the KanbanTaskerArchive database."
                     : "No completed tasks to archive.";

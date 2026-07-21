@@ -59,6 +59,8 @@
   -->
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.0" />
+    <!-- DI container (was transitive via Kanban.Services; now referenced directly for the thin client) -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.*" />
     <!-- Win2D: effect graph (blur/saturation/composite) for Visual Layer liquid glass -->
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.3.2" />
     <!-- Free Microsoft behaviors for hover effects in card template (PointerEntered to show edit/delete buttons) - 1:1 from original -->
@@ -70,8 +72,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Thin client: only the shared DTOs/interfaces. No Kanban.Services / EF Core / SQL. -->
     <ProjectReference Include="..\Kanban.Model\Kanban.Model.csproj" />
-    <ProjectReference Include="..\Kanban.Services\Kanban.Services.csproj" />
   </ItemGroup>
 
   <!--

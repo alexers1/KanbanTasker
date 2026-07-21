@@ -1,21 +1,25 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Threading.Tasks;
 
 namespace KanbanTasker.Model.Services
 {
+    /// <summary>
+    /// Database-level maintenance. These run on the server/API side (SQL Server operations);
+    /// the WinUI client triggers them over REST.
+    /// </summary>
     public interface IDatabaseServices
     {
-        void BackupDB(string destPath);
+        Task BackupDBAsync(string destPath);
 
         /// <summary>Current data-file size versus the SQL Server Express per-database limit.</summary>
-        DatabaseUsage GetDatabaseUsage();
+        Task<DatabaseUsage> GetDatabaseUsageAsync();
 
         /// <summary>
         /// Moves all tasks in "Completed" columns to the KanbanTaskerArchive database
         /// (keeps the main database under the Express size limit). Returns the count moved.
         /// </summary>
-        int ArchiveCompletedTasks();
+        Task<int> ArchiveCompletedTasksAsync();
 
         /// <summary>
         /// Restores a .bak into the KanbanTaskerImport staging database, then merges its
@@ -23,7 +27,7 @@ namespace KanbanTasker.Model.Services
         /// If space is tight, completed tasks go straight to the archive database.
         /// Returns a human-readable summary.
         /// </summary>
-        string ImportBackup(string bakPath);
+        Task<string> ImportBackupAsync(string bakPath);
     }
 
     public class DatabaseUsage

@@ -1,21 +1,22 @@
 using KanbanTasker.Model.Dto;
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Threading.Tasks;
 
 namespace KanbanTasker.Model.Services
 {
     /// <summary>
-    /// Interface for a service that interacts with the tasks within a kanban board.
+    /// Task (card) operations. Async for the same I/O reason as <see cref="IBoardServices"/>.
+    /// Validate* stays synchronous (pure in-memory validation).
     /// </summary>
     public interface ITaskServices
     {
-        RowOpResult<TaskDTO> SaveTask(TaskDTO task);
-        RowOpResult DeleteTask(int id);
-        List<TaskDTO> GetTasks();
-        void UpdateCardIndex(int iD, int currentCardIndex);
-        void UpdateColumnData(TaskDTO task);
-        void UpdateColumnName(int iD, string newColName);
+        Task<RowOpResult<TaskDTO>> SaveTaskAsync(TaskDTO task);
+        Task<RowOpResult> DeleteTaskAsync(int id);
+        Task<List<TaskDTO>> GetTasksAsync();
+        Task UpdateCardIndexAsync(int id, int currentCardIndex);
+        Task UpdateColumnDataAsync(TaskDTO task);
+        Task UpdateColumnNameAsync(int id, string newColName);
         RowOpResult<TaskDTO> ValidateTask(RowOpResult<TaskDTO> result);
     }
 }

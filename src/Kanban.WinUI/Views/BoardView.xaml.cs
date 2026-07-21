@@ -81,7 +81,7 @@ namespace Kanban_WinUI.Views
                     MaxTaskLimit = limit,
                     BoardId = ViewModel.Board.Id
                 };
-                ViewModel.CreateColumn(newColDto);
+                await ViewModel.CreateColumnAsync(newColDto);
             }
         }
 
@@ -111,15 +111,15 @@ namespace Kanban_WinUI.Views
             }
         }
 
-        private void BtnSaveColChanges_Click(object sender, RoutedEventArgs e)
+        private async void BtnSaveColChanges_Click(object sender, RoutedEventArgs e)
         {
-            // Close flyout and update via VM (1:1: set New* on VM from live edited col, then call update with original for rename logic)
+            // Close flyout and update via VM (set New* on VM from live edited col, then update with original for rename logic)
             if (flyoutEditColumn != null) flyoutEditColumn.Hide();
             if (ViewModel != null && _editingCol != null && !string.IsNullOrEmpty(_editingColOriginal))
             {
                 ViewModel.NewColumnName = _editingCol.ColumnName;
                 ViewModel.NewColumnMax = _editingCol.MaxTaskLimit;
-                ViewModel.UpdateColumn(_editingColOriginal);
+                await ViewModel.UpdateColumnAsync(_editingColOriginal);
             }
             _editingCol = null;
         }
@@ -160,7 +160,7 @@ namespace Kanban_WinUI.Views
                 var result = await dialog.ShowAsync();
                 if (result == ContentDialogResult.Primary && ViewModel != null)
                 {
-                    ViewModel.DeleteTask(id);
+                    await ViewModel.DeleteTaskAsync(id);
                 }
             }
         }
@@ -205,19 +205,19 @@ namespace Kanban_WinUI.Views
             // Additional delete logic
         }
 
-        private void MoveLeft_Click(object sender, RoutedEventArgs e)
+        private async void MoveLeft_Click(object sender, RoutedEventArgs e)
         {
             if (sender is HyperlinkButton btn && btn.CommandParameter is PresentationTask task)
             {
-                ViewModel.MoveTaskLeft(task);
+                await ViewModel.MoveTaskLeftAsync(task);
             }
         }
 
-        private void MoveRight_Click(object sender, RoutedEventArgs e)
+        private async void MoveRight_Click(object sender, RoutedEventArgs e)
         {
             if (sender is HyperlinkButton btn && btn.CommandParameter is PresentationTask task)
             {
-                ViewModel.MoveTaskRight(task);
+                await ViewModel.MoveTaskRightAsync(task);
             }
         }
 
@@ -238,7 +238,7 @@ namespace Kanban_WinUI.Views
                 var result = await dialog.ShowAsync();
                 if (result == ContentDialogResult.Primary && ViewModel != null)
                 {
-                    ViewModel.DeleteColumn(col);
+                    await ViewModel.DeleteColumnAsync(col);
                 }
             }
         }
@@ -384,16 +384,17 @@ namespace Kanban_WinUI.Views
             }
         }
 
-        private void ColumnCards_DragItemsCompleted(object sender, DragItemsCompletedEventArgs e)
+        private async void ColumnCards_DragItemsCompleted(object sender, DragItemsCompletedEventArgs e)
         {
             if (sender is ListView listView && listView.DataContext is PresentationColumn col)
             {
-                // Reindex tasks in this column after reorder
+                // Reindex tasks in this column after reorder (batch: save each, refresh once)
                 for (int i = 0; i < col.Tasks.Count; i++)
                 {
                     col.Tasks[i].ColumnIndex = i;
-                    ViewModel.UpdateCardIndex(col.Tasks[i].Id, i);
+                    await ViewModel.SaveCardIndexAsync(col.Tasks[i].Id, i);
                 }
+                await ViewModel.LoadColumnsAndTasksAsync();
             }
         }
 
@@ -414,8 +415,7 @@ namespace Kanban_WinUI.Views
                     if (task != null && task.Category != targetCol.ColumnName)
                     {
                         int newIndex = targetCol.Tasks.Count;
-                        ViewModel.UpdateCardColumn(targetCol.ColumnName, task, newIndex);
-                        ViewModel.LoadColumnsAndTasks(); // refresh per-column collections
+                        await ViewModel.UpdateCardColumnAsync(targetCol.ColumnName, task, newIndex); // moves + refreshes
                     }
                 }
             }
@@ -425,98 +425,7 @@ namespace Kanban_WinUI.Views
             }
         }
 
-        private void KanbanBoard_CardDragEnd(object sender, object e)
-        {
-            // Adapted for Syncfusion.Kanban.WinUI API compatibility across versions (the exact KanbanDragEndEventArgs may vary).
-            // Full 1:1 drag/reorder + reindex logic preserved using dynamic access.
-            if (e == null) return;
-            dynamic args = e;
-
-            try
-            {
-                var targetCategory = args.TargetKey?.ToString();
-                var selectedCardModel = args.SelectedCard?.Content as PresentationTask;
-                int targetCardIndex = args.TargetCardIndex ?? 0;
-
-                if (selectedCardModel == null) return;
-
-                var selectedTask = ViewModel.Board.Tasks.FirstOrDefault(x => x.Id == selectedCardModel.Id);
-                if (selectedTask != null)
-                {
-                    selectedTask.ColumnIndex = targetCardIndex;
-                    ViewModel.UpdateCardColumn(targetCategory, selectedCardModel, targetCardIndex);
-                }
-
-                var targetCol = args.TargetColumn;
-                var selectedCol = args.SelectedColumn;
-
-                if (targetCol != null && selectedCol != null && targetCol.Title?.ToString() == selectedCol.Title?.ToString())
-                {
-                    foreach (var card in targetCol.Cards)
-                    {
-                        int currentIndex = targetCol.Cards.IndexOf(card);
-                        if (currentIndex != targetCardIndex)
-                        {
-                            var currentModel = card.Content as PresentationTask;
-                            if (currentModel != null)
-                            {
-                                var task = ViewModel.Board.Tasks.FirstOrDefault(x => x.Id == currentModel.Id);
-                                if (task != null)
-                                {
-                                    task.ColumnIndex = currentIndex;
-                                    ViewModel.UpdateCardIndex(currentModel.Id, currentIndex);
-                                }
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    if (targetCol?.Cards?.Count > 0)
-                    {
-                        foreach (var card in targetCol.Cards)
-                        {
-                            int currentIndex = targetCol.Cards.IndexOf(card);
-                            if (currentIndex > targetCardIndex)
-                            {
-                                var currentModel = card.Content as PresentationTask;
-                                if (currentModel != null)
-                                {
-                                    var task = ViewModel.Board.Tasks.FirstOrDefault(x => x.Id == currentModel.Id);
-                                    if (task != null)
-                                    {
-                                        task.ColumnIndex = currentIndex;
-                                        ViewModel.UpdateCardIndex(currentModel.Id, currentIndex);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (selectedCol?.Cards?.Count > 0)
-                    {
-                        foreach (var card in selectedCol.Cards)
-                        {
-                            int currentIndex = selectedCol.Cards.IndexOf(card);
-                            var currentModel = card.Content as PresentationTask;
-                            if (currentModel != null)
-                            {
-                                var task = ViewModel.Board.Tasks.FirstOrDefault(x => x.Id == currentModel.Id);
-                                if (task != null)
-                                {
-                                    task.ColumnIndex = currentIndex;
-                                    ViewModel.UpdateCardIndex(currentModel.Id, currentIndex);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // Safe fallback for version differences in the Syncfusion Kanban control
-            }
-        }
+        // (Removed) KanbanBoard_CardDragEnd — Syncfusion-era dead code (no XAML binding, pre-async APIs).
 
         private void btnSaveColChanges_Click(object sender, RoutedEventArgs e)
         {
@@ -544,12 +453,12 @@ namespace Kanban_WinUI.Views
             ViewModel.IsPaneOpen = false;
         }
 
-        private void tappedFlyoutBtnDeleteCardYes_Click(object sender, RoutedEventArgs e)
+        private async void tappedFlyoutBtnDeleteCardYes_Click(object sender, RoutedEventArgs e)
         {
             ViewModel.IsPaneOpen = false;
             taskFlyout.Hide();
             tappedFlyoutDeleteCard.Hide();
-            ViewModel.DeleteTask(ViewModel.CurrentTask.Id);
+            await ViewModel.DeleteTaskAsync(ViewModel.CurrentTask.Id);
         }
 
         private void TappedFlyoutBtnEdit_Click(object sender, RoutedEventArgs e)

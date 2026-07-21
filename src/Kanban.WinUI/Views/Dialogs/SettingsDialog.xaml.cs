@@ -1,7 +1,7 @@
 using System;
 using Kanban_WinUI.ViewModels;
+using Kanban_WinUI.Services.Api;
 using KanbanTasker.Model.Services;
-using KanbanTasker.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage.Pickers;
@@ -10,8 +10,7 @@ namespace Kanban_WinUI.Views.Dialogs
 {
     /// <summary>
     /// Settings with categories on the left and details on the right:
-    /// Data saving (SQL Server connection), Backup &amp; import, Storage,
-    /// Attachments, About.
+    /// Data saving (API connection), Backup &amp; import, Storage, Attachments, About.
     /// </summary>
     public sealed partial class SettingsDialog : ContentDialog
     {
@@ -26,17 +25,8 @@ namespace Kanban_WinUI.Views.Dialogs
                 App.GetService<Kanban_WinUI.Services.AttachmentService>());
             DataContext = ViewModel;
 
-            // Data saving page: prefill from the active configuration + show live status
-            var cfg = DatabaseConfig.Current;
-            if (cfg != null)
-            {
-                CfgServerBox.Text = cfg.Server;
-                CfgDatabaseBox.Text = cfg.Database;
-                CfgWindowsAuthToggle.IsOn = cfg.IntegratedSecurity;
-                CfgUserBox.Text = cfg.UserId;
-                CfgPasswordBox.Password = cfg.Password;
-            }
-            UpdateAuthFields();
+            // Data saving page: prefill the API address + show live status
+            CfgApiUrlBox.Text = ApiConfig.Current?.BaseUrl ?? "http://localhost:5000";
             _ = ViewModel.LoadConnectionStatusAsync();
 
             CategoryList.SelectedIndex = 0;
@@ -57,32 +47,19 @@ namespace Kanban_WinUI.Views.Dialogs
             Hide();
         }
 
-        // === Data saving: SQL Server connection ===
+        // === Data saving: API connection ===
 
-        private void CfgWindowsAuthToggle_Toggled(object sender, RoutedEventArgs e) => UpdateAuthFields();
-
-        private void UpdateAuthFields()
-        {
-            bool sqlAuth = !CfgWindowsAuthToggle.IsOn;
-            CfgUserBox.IsEnabled = sqlAuth;
-            CfgPasswordBox.IsEnabled = sqlAuth;
-        }
-
-        private async void BtnTestSaveConnection_Click(object sender, RoutedEventArgs e)
+        private async void BtnTestSaveApi_Click(object sender, RoutedEventArgs e)
         {
             if (ViewModel.IsBusy)
                 return;
 
-            var cfg = new DatabaseConfig
+            var cfg = new ApiConfig
             {
-                Server = string.IsNullOrWhiteSpace(CfgServerBox.Text) ? @".\SQLEXPRESS" : CfgServerBox.Text.Trim(),
-                Database = string.IsNullOrWhiteSpace(CfgDatabaseBox.Text) ? "KanbanTasker" : CfgDatabaseBox.Text.Trim(),
-                IntegratedSecurity = CfgWindowsAuthToggle.IsOn,
-                UserId = CfgUserBox.Text.Trim(),
-                Password = CfgPasswordBox.Password
+                BaseUrl = string.IsNullOrWhiteSpace(CfgApiUrlBox.Text) ? "http://localhost:5000" : CfgApiUrlBox.Text.Trim()
             };
 
-            await ViewModel.TestAndSaveConnectionAsync(cfg);
+            await ViewModel.TestAndSaveApiAsync(cfg);
         }
 
         // === Backup & import ===

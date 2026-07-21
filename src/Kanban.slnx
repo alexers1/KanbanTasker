@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/Shared/">
+    <Project Path="Kanban.Model/Kanban.Model.csproj" />
+  </Folder>
+  <Folder Name="/Backend/">
+    <Project Path="Kanban.Services/Kanban.Services.csproj" />
+    <Project Path="Kanban.Api/Kanban.Api.csproj" />
+  </Folder>
+  <Folder Name="/Client/">
+    <Project Path="Kanban.WinUI/Kanban.WinUI.csproj" />
+  </Folder>
+</Solution>

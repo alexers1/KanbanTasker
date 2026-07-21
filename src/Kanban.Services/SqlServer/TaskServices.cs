@@ -1,11 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Threading.Tasks;
 using KanbanTasker.Model;
 using KanbanTasker.Model.Dto;
 using KanbanTasker.Model.Services;
-using KanbanTasker.Services.Database;
 
 namespace KanbanTasker.Services.SqlServer
 {
@@ -15,89 +14,83 @@ namespace KanbanTasker.Services.SqlServer
         {
         }
 
-        public List<TaskDTO> GetTasks()
+        public async Task<List<TaskDTO>> GetTasksAsync()
         {
-            return db.Tasks
+            return await db.Tasks
                 .AsNoTracking()
                 .OrderBy(t => t.ColumnIndex)
-                .ToList();
+                .ToListAsync();
         }
 
-        public RowOpResult<TaskDTO> SaveTask(TaskDTO task)
+        public async Task<RowOpResult<TaskDTO>> SaveTaskAsync(TaskDTO task)
         {
             if (task == null)
                 throw new ArgumentNullException(nameof(task));
 
-            RowOpResult<TaskDTO> result = new RowOpResult<TaskDTO>(task);
+            var result = new RowOpResult<TaskDTO>(task);
 
             ValidateTask(result);
-
             if (!result.Success)
                 return result;
 
             if (task.Id == 0)
-            {
                 db.Tasks.Add(task);
-            }
             else
-            {
                 db.Tasks.Update(task);
-            }
 
-            db.SaveChanges();
+            await db.SaveChangesAsync();
             result.Success = true;
             return result;
         }
 
-        public RowOpResult DeleteTask(int id)
+        public async Task<RowOpResult> DeleteTaskAsync(int id)
         {
-            RowOpResult result = new RowOpResult();
+            var result = new RowOpResult();
 
-            var task = db.Tasks.FirstOrDefault(t => t.Id == id);
+            var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id);
             if (task != null)
             {
                 db.Tasks.Remove(task);
-                db.SaveChanges();
+                await db.SaveChangesAsync();
             }
 
             result.Success = true;
             return result;
         }
 
-        public void UpdateCardIndex(int id, int currentCardIndex)
+        public async Task UpdateCardIndexAsync(int id, int currentCardIndex)
         {
-            var task = db.Tasks.FirstOrDefault(t => t.Id == id);
+            var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id);
             if (task != null)
             {
                 task.ColumnIndex = currentCardIndex;
-                db.SaveChanges();
+                await db.SaveChangesAsync();
             }
         }
 
-        public void UpdateColumnData(TaskDTO task)
+        public async Task UpdateColumnDataAsync(TaskDTO task)
         {
-            var existing = db.Tasks.FirstOrDefault(t => t.Id == task.Id);
+            var existing = await db.Tasks.FirstOrDefaultAsync(t => t.Id == task.Id);
             if (existing != null)
             {
                 existing.Category = task.Category;
                 existing.ColumnIndex = task.ColumnIndex;
-                db.SaveChanges();
+                await db.SaveChangesAsync();
             }
         }
 
-        public void UpdateColumnName(int id, string newColName)
+        public async Task UpdateColumnNameAsync(int id, string newColName)
         {
-            var task = db.Tasks.FirstOrDefault(t => t.Id == id);
+            var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id);
             if (task != null)
             {
                 task.Category = newColName;
-                db.SaveChanges();
+                await db.SaveChangesAsync();
             }
         }
 
         public override RowOpResult<TaskDTO> ValidateTask(RowOpResult<TaskDTO> result)
         {
-            // Delegate to base
             return base.ValidateTask(result);
         }
     }

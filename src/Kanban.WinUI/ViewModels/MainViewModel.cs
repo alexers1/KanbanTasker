@@ -12,7 +12,9 @@ using System.Threading.Tasks;
 namespace Kanban_WinUI.ViewModels
 {
     /// <summary>
-    /// MainViewModel: manages board list, current board, new/edit/save/delete board via dialog, navigation.
+    /// MainViewModel: board list, current board, new/edit/save/delete board via dialog.
+    /// Board data is loaded asynchronously over the API through <see cref="InitializeAsync"/>
+    /// (the constructor no longer performs network I/O).
     /// </summary>
     public partial class MainViewModel : ObservableObject
     {
@@ -23,8 +25,7 @@ namespace Kanban_WinUI.ViewModels
         private readonly IToastService _toastService;
         private readonly ITimerService _timerService;
 
-        // _tmpBoard is used to save the current board when a user clicks the Add button, than cancels.
-        // Should be able to remove this property when this ticket is fixed: https://github.com/microsoft/microsoft-ui-xaml/issues/1200
+        // _tmpBoard is the workaround for https://github.com/microsoft/microsoft-ui-xaml/issues/1200
         private BoardViewModel _tmpBoard;
         private string _oldBoardName;
         private string _oldBoardNotes;
@@ -46,35 +47,26 @@ namespace Kanban_WinUI.ViewModels
             _toastService = toastService;
             _timerService = timerService;
 
-            LoadBoards();
+            // Data is loaded via InitializeAsync (called from MainWindow) — not here.
         }
 
         partial void OnCurrentBoardChanged(BoardViewModel? value)
         {
-            // Property change side effects for CurrentBoard (navigation driven from MainWindow)
-            if (value == null)
-            {
-                // _navigationService.NavigateToDefaultView(); // if wired
-            }
-            else
-            {
-                // _navigationService.NavigateToBoard(value);
-            }
+            // Navigation is driven from MainWindow.
         }
 
-        /// <summary>
-        /// Initializes boards and tasks from services (tasks sorted by ColumnIndex for restore).
-        /// </summary>
-        public void LoadBoards()
+        /// <summary>Loads all boards (and their columns/tasks) from the API.</summary>
+        public Task InitializeAsync() => LoadBoardsAsync();
+
+        public async Task LoadBoardsAsync()
         {
             BoardList.Clear();
-            var boardDTOs = _manifest.BoardServices.GetBoards();
+            var boardDTOs = await _manifest.BoardServices.GetBoardsAsync();
 
             foreach (var dto in boardDTOs)
             {
                 var presBoard = new PresentationBoard(dto);
 
-                // Fill tasks (copied logic)
                 if (dto.Tasks?.Any() ?? false)
                 {
                     foreach (var taskDTO in dto.Tasks.OrderBy(x => x.ColumnIndex))
@@ -88,8 +80,8 @@ namespace Kanban_WinUI.ViewModels
                     }
                 }
 
-                // Create per-board VM (like old boardViewModelFactory) - pass appNotif for 1:1 notifs
                 var boardVM = new BoardViewModel(presBoard, _manifest, _appNotificationService, _toastService, _timerService);
+                await boardVM.InitializeAsync();   // load columns (tasks already filled from the DTO)
                 BoardList.Add(boardVM);
             }
 
@@ -111,16 +103,15 @@ namespace Kanban_WinUI.ViewModels
                     _toastService,
                     _timerService);
 
-                _tmpBoard = CurrentBoard;            // Workaround for this issue.  Don't remove this line till it's fixed. https://github.com/microsoft/microsoft-ui-xaml/issues/1200
+                _tmpBoard = CurrentBoard;
                 if (_tmpBoard != null)
                 {
                     _oldBoardName = _tmpBoard.Board.Name;
                     _oldBoardNotes = _tmpBoard.Board.Notes;
                 }
 
-                CurrentBoard = null;                // Workaround for this issue.  Don't remove this line till it's fixed. https://github.com/microsoft/microsoft-ui-xaml/issues/1200
+                CurrentBoard = null;
                 CurrentBoard = newBoard;
-                // Don't add to BoardList here.  Wait till user saves.
 
                 await _dialogService.ShowEditBoardDialog(this);
             }
@@ -140,7 +131,7 @@ namespace Kanban_WinUI.ViewModels
         }
 
         [RelayCommand]
-        public void SaveBoard()
+        public async Task SaveBoardAsync()
         {
             if (CurrentBoard?.Board == null)
                 return;
@@ -151,16 +142,14 @@ namespace Kanban_WinUI.ViewModels
 
             BoardDTO dto = CurrentBoard.Board.ToBoardDTO();
             bool isNew = dto.Id == 0;
-            var result = _manifest.BoardServices.SaveBoard(dto);
+            var result = await _manifest.BoardServices.SaveBoardAsync(dto);
 
             if (isNew && result.Success)
             {
                 CurrentBoard.Board.Id = result.Entity.Id;
                 BoardList.Add(CurrentBoard);
-                _manifest.BoardServices.CreateColumns(CurrentBoard.Board.Id);
-
-                // Set columns to collection (1:1)
-                CurrentBoard.LoadColumnsAndTasks();
+                await _manifest.BoardServices.CreateColumnsAsync(CurrentBoard.Board.Id);
+                await CurrentBoard.LoadColumnsAndTasksAsync();
             }
 
             _appNotificationService.DisplayNotificationAsync(
@@ -171,7 +160,6 @@ namespace Kanban_WinUI.ViewModels
         [RelayCommand]
         public void CancelSaveBoard()
         {
-            // BUG: Currently _tmpBoard still holds edited version? (kept from original for 1:1)
             if (CurrentBoard?.Board != null)
             {
                 CurrentBoard.Board.Name = "";
@@ -180,7 +168,6 @@ namespace Kanban_WinUI.ViewModels
             CurrentBoard = null;
             CurrentBoard = _tmpBoard;
 
-            // preserve original dialog cancel behavior (UWP ContentDialog + binding state hack)
             if (CurrentBoard != null)
             {
                 CurrentBoard.Board.Name = _oldBoardName;
@@ -189,20 +176,20 @@ namespace Kanban_WinUI.ViewModels
         }
 
         [RelayCommand(CanExecute = nameof(CanDeleteBoard))]
-        public void DeleteBoard()
+        public async Task DeleteBoardAsync()
         {
             if (CurrentBoard == null)
                 return;
 
-            _manifest.BoardServices.DeleteBoard(CurrentBoard.Board.Id);
+            await _manifest.BoardServices.DeleteBoardAsync(CurrentBoard.Board.Id);
             BoardList.Remove(CurrentBoard);
 
             if (CurrentBoard?.Board != null)
             {
-                CurrentBoard.Board.Name = ""; // preserve original dialog/selection state behavior
-                CurrentBoard.Board.Notes = ""; // preserve original dialog/selection state behavior
+                CurrentBoard.Board.Name = "";
+                CurrentBoard.Board.Notes = "";
             }
-            CurrentBoard = null; // preserve original dialog/selection state behavior
+            CurrentBoard = null;
             CurrentBoard = BoardList.LastOrDefault();
         }
 
@@ -230,7 +217,7 @@ namespace Kanban_WinUI.ViewModels
         internal void SetCurrentBoardOnClose()
         {
             if (BoardList.Count == 0)
-                CurrentBoard = null; // Displays NoBoardsView after
+                CurrentBoard = null;
             else
             {
                 CurrentBoard = null;

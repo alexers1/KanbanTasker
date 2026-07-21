@@ -36,7 +36,7 @@ namespace Kanban_WinUI.Views.Dialogs
             BoardListView.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
         }
 
-        private void DeleteItemsBtn_Click(object sender, RoutedEventArgs e)
+        private async void DeleteItemsBtn_Click(object sender, RoutedEventArgs e)
         {
             if (DeleteItemsBtn.Flyout is Flyout flyout)
                 flyout.Hide();
@@ -55,7 +55,7 @@ namespace Kanban_WinUI.Views.Dialogs
 
             foreach (var boardVM in selectedItems)
             {
-                manifest.BoardServices.DeleteBoard(boardVM.Board.Id);
+                await manifest.BoardServices.DeleteBoardAsync(boardVM.Board.Id);
                 ViewModel.BoardList.Remove(boardVM);
             }
 

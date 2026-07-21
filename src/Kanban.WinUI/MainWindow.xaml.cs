@@ -89,21 +89,8 @@ public sealed partial class MainWindow : Window
             };
         }
 
-        // Initial navigation handled below for first board
-
-        // Auto load first board into the view
-        App.AppendStartupLog("MainWindow: before navigation check, CurrentBoard=" + (ViewModel?.CurrentBoard != null) + ", Count=" + (ViewModel?.BoardList?.Count ?? 0));
-        if (ViewModel != null && ViewModel.CurrentBoard != null && ViewModel.BoardList.Count > 0)
-        {
-            ViewModel.CurrentBoard = ViewModel.BoardList.First(); // ensure
-            RootFrame.Navigate(typeof(Views.BoardView), ViewModel.CurrentBoard);
-            App.AppendStartupLog("MainWindow: Navigated to BoardView");
-        }
-        else
-        {
-            RootFrame.Navigate(typeof(Views.NoBoardsAvailableView));
-            App.AppendStartupLog("MainWindow: No boards - showing NoBoardsAvailableView");
-        }
+        // Boards are loaded asynchronously after Activate (App calls LoadBoardsAndShowAsync);
+        // the constructor no longer navigates because there is no data yet.
 
         // Populate NavigationView from ViewModel board list
         if (ViewModel != null)
@@ -139,6 +126,42 @@ public sealed partial class MainWindow : Window
             this.AppWindow.Show();
         }
         catch { }
+    }
+
+    /// <summary>
+    /// Loads boards from the API (network I/O off the constructor), populates the shell,
+    /// then runs the size-limit warning and first-run checks. Called by App after Activate.
+    /// </summary>
+    public async System.Threading.Tasks.Task LoadBoardsAndShowAsync()
+    {
+        if (ViewModel == null) return;
+
+        await ViewModel.InitializeAsync();
+        RefreshNavItems();
+        UpdateTitleBarSubtitle();
+        NavigateToCurrentBoard();
+        App.AppendStartupLog("MainWindow: boards loaded, count=" + ViewModel.BoardList.Count);
+
+        try
+        {
+            var usage = await App.GetService<IDatabaseServices>().GetDatabaseUsageAsync();
+            App.AppendStartupLog($"DB usage: {usage.SizeMB} MB ({usage.Percent:F1}%)");
+            if (usage.Percent >= 80)
+                App.GetService<IAppNotificationService>().DisplayNotificationAsync(
+                    $"Database is at {usage.Percent:F0}% of the {usage.LimitMB / 1024:F0} GB limit — archive completed tasks in Settings.", 8000);
+        }
+        catch (Exception ex) { App.AppendStartupLog("Usage check failed: " + ex.Message); }
+
+        try
+        {
+            string marker = System.IO.Path.Combine(App.AppDataFolder, "firstrun.done");
+            if (!System.IO.File.Exists(marker))
+            {
+                System.IO.File.WriteAllText(marker, DateTime.Now.ToString("o"));
+                await App.GetService<IDialogService>().ShowFirstRunDialog();
+            }
+        }
+        catch (Exception ex) { App.AppendStartupLog("First-run dialog failed: " + ex.Message); }
     }
 
     private void RefreshNavItems()
@@ -239,8 +262,8 @@ public sealed partial class MainWindow : Window
                 await ViewModel.OpenSettingsDialog();
 
                 // Settings may have archived tasks away or imported new boards —
-                // rebuild everything from the database and show the current board.
-                ViewModel.LoadBoards();
+                // rebuild everything from the API and show the current board.
+                await ViewModel.LoadBoardsAsync();
                 NavigateToCurrentBoard();
             }
             return;
@@ -319,7 +342,7 @@ public sealed partial class MainWindow : Window
 
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
-            ViewModel.DeleteBoard();  // removes from list (nav refreshes via CollectionChanged) and picks a new CurrentBoard
+            await ViewModel.DeleteBoardAsync();  // removes from list (nav refreshes via CollectionChanged) and picks a new CurrentBoard
             NavigateToCurrentBoard();
         }
     }
