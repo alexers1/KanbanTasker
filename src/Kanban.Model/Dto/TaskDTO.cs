@@ -3,7 +3,7 @@ using System;
 namespace KanbanTasker.Model.Dto
 {
     // A data transfer object for a task
-    public class TaskDTO
+    public class TaskDTO : IStamped
     {
         public int Id { get; set; }
         public int BoardId { get; set; }           // if every task is associate with a board than this should not be nullable.
@@ -26,6 +26,11 @@ namespace KanbanTasker.Model.Dto
         /// so the database stays small and files move easily between computers.
         /// </summary>
         public string Attachments { get; set; } = "";
+
+        // Stable identity + timestamps for idempotent import (see IStamped).
+        public Guid Uuid { get; set; }
+        public string CreatedAt { get; set; } = "";
+        public string UpdatedAt { get; set; } = "";
 
         // Navigation back to the owning board. Optional on the wire: requests identify
         // the board by BoardId, so the client never sends this (a non-nullable reference

@@ -382,6 +382,20 @@ a { color: var(--accent); text-decoration: none; }
 }
 .textarea { resize: vertical; min-height: 90px; }
 
+.attach-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.attach-path {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  padding: 6px 9px;
+  background: var(--control-bg);
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
 /* ---- Modal --------------------------------------------------------------- */
 
 .modal-backdrop {

@@ -34,11 +34,38 @@ namespace KanbanTasker.Services.SqlServer
                 return result;
 
             if (task.Id == 0)
+            {
+                EntityStamp.Create(task);
                 db.Tasks.Add(task);
+                await db.SaveChangesAsync();
+            }
             else
-                db.Tasks.Update(task);
+            {
+                // Copy editable fields onto the tracked row so Uuid/CreatedAt survive
+                // (the client doesn't round-trip them); bump UpdatedAt.
+                var existing = await db.Tasks.FirstOrDefaultAsync(t => t.Id == task.Id);
+                if (existing != null)
+                {
+                    existing.BoardId = task.BoardId;
+                    existing.Title = task.Title;
+                    existing.Description = task.Description;
+                    existing.Category = task.Category;
+                    existing.ColumnIndex = task.ColumnIndex;
+                    existing.ColorKey = task.ColorKey;
+                    existing.Tags = task.Tags;
+                    existing.Attachments = task.Attachments;
+                    existing.DateCreated = task.DateCreated;
+                    existing.DueDate = task.DueDate;
+                    existing.StartDate = task.StartDate;
+                    existing.FinishDate = task.FinishDate;
+                    existing.TimeDue = task.TimeDue;
+                    existing.ReminderTime = task.ReminderTime;
+                    EntityStamp.Touch(existing);
+                    await db.SaveChangesAsync();
+                    task.Uuid = existing.Uuid; task.CreatedAt = existing.CreatedAt; task.UpdatedAt = existing.UpdatedAt;
+                }
+            }
 
-            await db.SaveChangesAsync();
             result.Success = true;
             return result;
         }
@@ -60,8 +87,7 @@ namespace KanbanTasker.Services.SqlServer
                     .Where(t => t.BoardId == task.BoardId && t.Category == task.Category)
                     .OrderBy(t => t.ColumnIndex)
                     .ToListAsync();
-                for (int i = 0; i < remaining.Count; i++)
-                    remaining[i].ColumnIndex = i;
+                for (int i = 0; i < remaining.Count; i++) { remaining[i].ColumnIndex = i; EntityStamp.Touch(remaining[i]); }
                 await db.SaveChangesAsync();
             }
 
@@ -75,6 +101,7 @@ namespace KanbanTasker.Services.SqlServer
             if (task != null)
             {
                 task.ColumnIndex = currentCardIndex;
+                EntityStamp.Touch(task);
                 await db.SaveChangesAsync();
             }
         }
@@ -86,6 +113,7 @@ namespace KanbanTasker.Services.SqlServer
             {
                 existing.Category = task.Category;
                 existing.ColumnIndex = task.ColumnIndex;
+                EntityStamp.Touch(existing);
                 await db.SaveChangesAsync();
             }
         }
@@ -96,6 +124,7 @@ namespace KanbanTasker.Services.SqlServer
             if (task != null)
             {
                 task.Category = newColName;
+                EntityStamp.Touch(task);
                 await db.SaveChangesAsync();
             }
         }

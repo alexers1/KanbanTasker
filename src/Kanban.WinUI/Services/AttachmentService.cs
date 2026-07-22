@@ -1,98 +1,66 @@
 using System;
 using System.IO;
-using System.Linq;
 
 namespace Kanban_WinUI.Services
 {
     /// <summary>
-    /// Task attachments live as plain files in one configurable folder (which can be a
-    /// network share like \\server\kanban). The database stores only relative file
-    /// names — never file contents — so the database stays far under the Express size
-    /// limit and moving to a new computer is just copying one folder.
+    /// Attachments are stored as <b>path references</b>, not uploaded files: the database
+    /// keeps a "<c>MACHINE\full\path</c>" string that points at a file or a whole folder on
+    /// the machine that created it. Nothing is copied and no bytes are stored — the point is
+    /// only to remember <i>which machine</i> and <i>where</i> a task's material lives, and to
+    /// open it in File Explorer from the desktop client.
     /// </summary>
     public class AttachmentService
     {
-        private static readonly string RootSettingPath = Path.Combine(App.AppDataFolder, "attachments.root");
+        /// <summary>The name of this computer (the reference prefix for new attachments).</summary>
+        public static string ThisMachine => Environment.MachineName;
 
-        private static readonly string DefaultRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "KanbanTasker Attachments");
+        /// <summary>Builds a stored reference for a picked file/folder: "MACHINE\full\path".</summary>
+        public string MakeReference(string fullPath) => $"{ThisMachine}\\{fullPath}";
 
-        /// <summary>The folder that holds all attachment files.</summary>
-        public string RootFolder
+        /// <summary>Splits a stored reference into its machine name and the local path.
+        /// References without a machine prefix (legacy names) resolve to this machine.</summary>
+        public (string Machine, string Path) Parse(string reference)
         {
-            get
-            {
-                try
-                {
-                    if (File.Exists(RootSettingPath))
-                    {
-                        var saved = File.ReadAllText(RootSettingPath).Trim();
-                        if (!string.IsNullOrWhiteSpace(saved))
-                            return saved;
-                    }
-                }
-                catch { }
-                return DefaultRoot;
-            }
+            if (string.IsNullOrWhiteSpace(reference))
+                return (ThisMachine, "");
+
+            int slash = reference.IndexOf('\\');
+            // A drive-qualified path ("D:\...") or UNC has no machine prefix.
+            if (slash <= 0 || reference.Length > 1 && reference[1] == ':')
+                return (ThisMachine, reference);
+
+            return (reference.Substring(0, slash), reference.Substring(slash + 1));
         }
 
-        private void SaveRoot(string root)
-        {
-            Directory.CreateDirectory(App.AppDataFolder);
-            File.WriteAllText(RootSettingPath, root);
-        }
+        /// <summary>True when the reference points at a location on the current machine.</summary>
+        public bool IsOnThisMachine(string reference) =>
+            string.Equals(Parse(reference).Machine, ThisMachine, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Copies a file into the attachments folder and returns the relative name
-        /// stored in the database. Never stores the file inside the database.
+        /// Opens the reference in File Explorer: a folder opens directly; a file opens its
+        /// containing folder with the file selected. Returns an error message, or null on success.
         /// </summary>
-        public string AddAttachment(string sourceFilePath)
+        public string? OpenInExplorer(string reference)
         {
-            Directory.CreateDirectory(RootFolder);
+            var (machine, path) = Parse(reference);
+            if (!string.Equals(machine, ThisMachine, StringComparison.OrdinalIgnoreCase))
+                return $"This attachment is on '{machine}'. Open it from that computer.";
 
-            string name = Path.GetFileName(sourceFilePath);
-            string dest = Path.Combine(RootFolder, name);
-            if (File.Exists(dest))
+            try
             {
-                // Unique name when a file with the same name already exists
-                name = $"{Path.GetFileNameWithoutExtension(name)}_{DateTime.Now:yyyyMMddHHmmss}{Path.GetExtension(name)}";
-                dest = Path.Combine(RootFolder, name);
+                if (Directory.Exists(path))
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+                else if (File.Exists(path))
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+                else
+                    return $"Not found on this machine: {path}";
+                return null;
             }
-
-            File.Copy(sourceFilePath, dest);
-            return name;
-        }
-
-        /// <summary>Absolute path of a stored attachment name.</summary>
-        public string ResolvePath(string relativeName) => Path.Combine(RootFolder, relativeName);
-
-        /// <summary>
-        /// Moves the whole attachment store to a new folder (e.g. when changing
-        /// computers or pointing at a network share). Files are copied, the setting
-        /// is updated, and the database needs no change because it stores only
-        /// relative names. Returns the number of files copied.
-        /// </summary>
-        public int MigrateTo(string newRoot)
-        {
-            if (string.IsNullOrWhiteSpace(newRoot))
-                throw new ArgumentException("Target folder is empty.", nameof(newRoot));
-
-            string oldRoot = RootFolder;
-            Directory.CreateDirectory(newRoot);
-
-            int copied = 0;
-            if (Directory.Exists(oldRoot) &&
-                !string.Equals(Path.GetFullPath(oldRoot), Path.GetFullPath(newRoot), StringComparison.OrdinalIgnoreCase))
+            catch (Exception ex)
             {
-                foreach (var file in Directory.EnumerateFiles(oldRoot))
-                {
-                    File.Copy(file, Path.Combine(newRoot, Path.GetFileName(file)), overwrite: true);
-                    copied++;
-                }
+                return ex.Message;
             }
-
-            SaveRoot(newRoot);
-            return copied;
         }
     }
 }

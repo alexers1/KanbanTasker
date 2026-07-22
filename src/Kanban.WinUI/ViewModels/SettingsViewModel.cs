@@ -9,12 +9,11 @@ namespace Kanban_WinUI.ViewModels
 {
     /// <summary>
     /// Settings: API connection, database backup/import/archive (server-side over REST),
-    /// size-limit monitoring, and the local attachments folder.
+    /// and size-limit monitoring. (Attachments are path references now — nothing to manage here.)
     /// </summary>
     public partial class SettingsViewModel : ObservableObject
     {
         private readonly IDatabaseServices _databaseServices;
-        private readonly AttachmentService _attachmentService;
 
         [ObservableProperty]
         private bool _isBusy;
@@ -32,22 +31,17 @@ namespace Kanban_WinUI.ViewModels
         private string _archiveStatusText = "";
 
         [ObservableProperty]
-        private string _attachmentsRoot = "";
-
-        [ObservableProperty]
-        private string _attachmentStatusText = "";
-
-        [ObservableProperty]
         private string _connectionStatusText = "";
 
         /// <summary>The API base URL the client is talking to.</summary>
         public string DatabaseInfo => ApiConfig.Current is { } c ? $"API — {c.BaseUrl}" : "API — (not configured)";
 
-        public SettingsViewModel(IDatabaseServices databaseServices, AttachmentService attachmentService)
+        /// <summary>This PC's name — the prefix used for new attachment references.</summary>
+        public string ThisMachineName => $"This PC: {Environment.MachineName}";
+
+        public SettingsViewModel(IDatabaseServices databaseServices)
         {
             _databaseServices = databaseServices;
-            _attachmentService = attachmentService;
-            AttachmentsRoot = _attachmentService.RootFolder;
             _ = LoadUsageAsync();
         }
 
@@ -169,27 +163,6 @@ namespace Kanban_WinUI.ViewModels
             catch (Exception ex)
             {
                 ArchiveStatusText = "Archive failed: " + ex.Message;
-            }
-            finally
-            {
-                IsBusy = false;
-            }
-        }
-
-        /// <summary>Copies all attachment files to a new folder and repoints the app at it.</summary>
-        public async Task MigrateAttachmentsAsync(string newRoot)
-        {
-            IsBusy = true;
-            AttachmentStatusText = "Moving attachment files…";
-            try
-            {
-                int copied = await Task.Run(() => _attachmentService.MigrateTo(newRoot));
-                AttachmentsRoot = _attachmentService.RootFolder;
-                AttachmentStatusText = $"Moved {copied} file(s). Attachments now live in {newRoot}.";
-            }
-            catch (Exception ex)
-            {
-                AttachmentStatusText = "Move failed: " + ex.Message;
             }
             finally
             {

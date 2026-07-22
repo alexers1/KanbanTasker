@@ -120,13 +120,35 @@ public class KanbanApiClient
         return string.IsNullOrEmpty(body?.Path) ? "Backup completed." : $"Backup written to {body!.Path}";
     }
 
-    /// <summary>Import a .bak (server path) into staging and merge its boards as new boards.</summary>
-    public async Task<string> ImportAsync(string serverBakPath)
+    /// <summary>Import a .bak (server path): upsert by Uuid (idempotent). overwrite=true makes the
+    /// backup win on every match (full restore); false keeps the newer row.</summary>
+    public async Task<string> ImportAsync(string serverBakPath, bool overwrite = false)
     {
-        var resp = await _http.PostAsJsonAsync("api/database/import", new { path = serverBakPath }, Json);
+        var url = $"api/database/import?overwrite={(overwrite ? "true" : "false")}";
+        var resp = await _http.PostAsJsonAsync(url, new { path = serverBakPath }, Json);
         if (!resp.IsSuccessStatusCode) return $"Import failed (HTTP {(int)resp.StatusCode}).";
         var body = await resp.Content.ReadFromJsonAsync<MsgResp>(Json);
         return string.IsNullOrEmpty(body?.Message) ? "Import completed." : body!.Message;
+    }
+
+    /// <summary>Relative URL that streams a fresh full backup as a download (LAN only).</summary>
+    public const string BackupDownloadPath = "api/database/backup/download";
+
+    /// <summary>Upload a .bak and import it (multipart). overwrite=true is a full restore.</summary>
+    public async Task<string> UploadImportAsync(Stream stream, string fileName, bool overwrite)
+    {
+        using var content = new System.Net.Http.MultipartFormDataContent();
+        var part = new StreamContent(stream);
+        part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        content.Add(part, "file", fileName);
+
+        var resp = await _http.PostAsync($"api/database/import/upload?overwrite={(overwrite ? "true" : "false")}", content);
+        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            return "Backup/import is only available on the local network.";
+        if (!resp.IsSuccessStatusCode)
+            return $"Import failed (HTTP {(int)resp.StatusCode}).";
+        var body = await resp.Content.ReadFromJsonAsync<MsgResp>(Json);
+        return string.IsNullOrEmpty(body?.Message) ? "Import complete." : body!.Message;
     }
 
     private record ArchiveResp(int Archived);

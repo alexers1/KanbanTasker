@@ -427,5 +427,8 @@ appsettings.json
 # Claude Code local settings
 .claude/
 
+# Local dev/ops helper scripts (contain LAN/server specifics, not secrets)
+/scripts/
+
 # Production connection string (server DB password) - never commit
 **/appsettings.Production.json

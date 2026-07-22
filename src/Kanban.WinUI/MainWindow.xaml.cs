@@ -136,6 +136,10 @@ public sealed partial class MainWindow : Window
     {
         if (ViewModel == null) return;
 
+        // Make sure the LAN server is reachable before loading; if not, let the user copy the
+        // error and correct the IP/port up front (default is the deployed server).
+        await EnsureConnectionAsync();
+
         await ViewModel.InitializeAsync();
         RefreshNavItems();
         UpdateTitleBarSubtitle();
@@ -162,6 +166,39 @@ public sealed partial class MainWindow : Window
             }
         }
         catch (Exception ex) { App.AppendStartupLog("First-run dialog failed: " + ex.Message); }
+    }
+
+    /// <summary>
+    /// Pings the configured LAN API; on failure shows a dialog with the (copyable) error and
+    /// editable IP/port, retrying until it connects or the user chooses to continue anyway.
+    /// </summary>
+    private async System.Threading.Tasks.Task EnsureConnectionAsync()
+    {
+        var cfg = Services.Api.ApiConfig.Current;
+        if (cfg == null || Content?.XamlRoot == null) return;
+
+        string? error = await cfg.TestConnectionAsync();
+        while (error != null)
+        {
+            App.AppendStartupLog("API unreachable at " + cfg.BuildBaseUrl() + " — " + error);
+            try
+            {
+                var dlg = new Views.Dialogs.ConnectionErrorDialog(cfg, error) { XamlRoot = Content.XamlRoot };
+                var result = await dlg.ShowAsync();
+                if (result != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
+                    return; // "Continue anyway" — the app will show an empty/errored board
+
+                // The dialog saved the new IP/port; point the shared HttpClient at it (safe: no
+                // request has been made yet), then retest.
+                App.ApplyApiBaseAddress();
+                error = await cfg.TestConnectionAsync();
+            }
+            catch (Exception ex)
+            {
+                App.AppendStartupLog("ConnectionErrorDialog failed: " + ex.Message);
+                return;
+            }
+        }
     }
 
     private void RefreshNavItems()

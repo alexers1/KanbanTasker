@@ -6,6 +6,7 @@
 *@
 @inject KanbanApiClient Api
 @inject ThemeService Theme
+@inject NavigationManager Nav
 
 <div class="modal-backdrop" @onclick="OnClose">
     <div class="modal glass settings-modal" @onclick:stopPropagation="true">
@@ -47,18 +48,31 @@
                 {
                     <h3>Backup &amp; import</h3>
                     <p class="muted">
-                        Export a full SQL Server backup (.bak) or import one. Paths are on the
-                        <strong>server</strong> (where the API and database live), e.g. <code>C:\Backups\kanban.bak</code>.
-                        Import restores into a staging database and adds its boards next to yours — existing data is never overwritten.
+                        Export downloads a full backup (.bak) of the server database to this device; import uploads a
+                        .bak back. Import merges by a stable id — re-importing the same backup changes nothing and missing
+                        items are restored. <strong>Local network only</strong> (a full backup can be large).
                     </p>
-                    <div class="field">
-                        <label>Backup file path (on the server)</label>
-                        <input class="input" @bind="backupPath" placeholder="C:\Backups\kanban.bak" />
-                    </div>
-                    <div style="display:flex;gap:10px">
-                        <button class="btn accent" disabled="@busy" @onclick="Backup">Export backup</button>
-                        <button class="btn" disabled="@busy" @onclick="Import">Import backup</button>
-                    </div>
+                    @if (!isLan)
+                    {
+                        <p class="muted" style="color:var(--prio-medium)">
+                            You're not on the server's local network. Open this page via the server's LAN address to back up or import.
+                        </p>
+                    }
+                    else
+                    {
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:var(--text-secondary)">
+                            <input type="checkbox" @bind="overwrite" />
+                            Overwrite — let the backup replace matching items (full restore, repairs corrupted data)
+                        </label>
+                        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                            <a class="btn accent" href="@KanbanApiClient.BackupDownloadPath" download="KanbanTasker.bak">Export backup</a>
+                            <label class="btn" style="cursor:pointer;margin:0">
+                                Import backup…
+                                <InputFile OnChange="OnImportFile" style="display:none" />
+                            </label>
+                            @if (busy) { <span class="spinner" style="width:20px;height:20px"></span> }
+                        </div>
+                    }
                     @if (!string.IsNullOrEmpty(backupText)) { <p class="muted" style="margin-top:10px">@backupText</p> }
                 }
                 else if (cat == "Appearance")
@@ -99,19 +113,36 @@
 
     private string cat = "Connection";
     private bool busy;
+    private bool overwrite;
+    private bool isLan;
     private string connText = "checking…";
     private DatabaseUsage usage = new();
     private string usageText = "Checking database size…";
     private string archiveText = "";
-    private string backupPath = "";
     private string backupText = "";
 
     private string UsagePercentCss => $"{Math.Min(100, Math.Max(0, usage.Percent)):0.##}%";
 
     protected override async System.Threading.Tasks.Task OnInitializedAsync()
     {
+        // Backup/import are LAN-only: allowed only when this page was opened via a private/loopback host.
+        try { isLan = IsPrivateHost(new Uri(Nav.BaseUri).Host); } catch { isLan = false; }
         connText = await Api.IsReachableAsync() ? "connected ✔" : "not reachable ✖";
         await LoadUsage();
+    }
+
+    private static bool IsPrivateHost(string host)
+    {
+        if (string.IsNullOrEmpty(host)) return false;
+        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+        if (!System.Net.IPAddress.TryParse(host, out var ip)) return false;
+        if (System.Net.IPAddress.IsLoopback(ip)) return true;
+        var b = ip.GetAddressBytes();
+        if (b.Length != 4) return false;
+        return b[0] == 10
+            || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+            || (b[0] == 192 && b[1] == 168)
+            || (b[0] == 169 && b[1] == 254);
     }
 
     private async System.Threading.Tasks.Task LoadUsage()
@@ -137,20 +168,19 @@
         finally { busy = false; }
     }
 
-    private async System.Threading.Tasks.Task Backup()
+    // Export is a plain download link (see the markup). Import uploads the picked .bak.
+    private async System.Threading.Tasks.Task OnImportFile(InputFileChangeEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(backupPath)) { backupText = "Enter a server file path first."; return; }
-        busy = true; backupText = "Backing up database…";
-        try { backupText = await Api.BackupAsync(backupPath.Trim()); }
-        catch (Exception ex) { backupText = "Backup failed: " + ex.Message; }
-        finally { busy = false; }
-    }
-
-    private async System.Threading.Tasks.Task Import()
-    {
-        if (string.IsNullOrWhiteSpace(backupPath)) { backupText = "Enter the server .bak path first."; return; }
-        busy = true; backupText = "Importing backup…";
-        try { backupText = await Api.ImportAsync(backupPath.Trim()); }
+        var file = e.File;
+        if (file == null) return;
+        busy = true;
+        backupText = overwrite ? "Uploading and restoring (overwrite)…" : "Uploading and importing…";
+        try
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 2_000_000_000L);
+            backupText = await Api.UploadImportAsync(stream, file.Name, overwrite);
+            await LoadUsage();
+        }
         catch (Exception ex) { backupText = "Import failed: " + ex.Message; }
         finally { busy = false; }
     }

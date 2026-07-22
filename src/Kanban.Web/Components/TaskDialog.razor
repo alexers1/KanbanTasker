@@ -1,8 +1,9 @@
 @*
    Create / edit a task. Works on a copy the parent hands in, so Cancel is a
    no-op. Mirrors the WinUI edit pane (title, description, column, priority,
-   due date, tags) — richer WinUI-only bits (calendar picker, attachments,
-   reminders) are intentionally simplified for the web.
+   due date, tags, attachments). Attachments are path references (a file or
+   folder on a PC) — the web can view/add/remove them; opening them in a file
+   manager only works on the desktop client.
 *@
 
 <div class="modal-backdrop" @onclick="OnCancel">
@@ -53,6 +54,21 @@
             </div>
         </div>
 
+        <div class="field">
+            <label>Attachments <span style="font-weight:400;opacity:.7">(links to files/folders — open them on the desktop app)</span></label>
+            @foreach (var a in AttachmentList)
+            {
+                <div class="attach-row">
+                    <span class="attach-path" title="@a">@a</span>
+                    <button type="button" class="btn icon subtle" @onclick="() => RemoveAttachment(a)" title="Remove">✕</button>
+                </div>
+            }
+            <div style="display:flex;gap:8px;margin-top:6px">
+                <input class="input" @bind="newAttachment" @bind:event="oninput" placeholder="PC-NAME\D:\path\to\file-or-folder" />
+                <button type="button" class="btn" @onclick="AddAttachment">Add</button>
+            </div>
+        </div>
+
         @if (!string.IsNullOrEmpty(Error))
         {
             <div class="modal-error">@Error</div>
@@ -72,6 +88,30 @@
     [Parameter] public EventCallback OnCancel { get; set; }
 
     private string Error = "";
+    private string newAttachment = "";
+
+    // Attachments are stored as a ';'-separated string of "MACHINE\path" references.
+    private List<string> AttachmentList =>
+        string.IsNullOrWhiteSpace(Task.Attachments)
+            ? new()
+            : Task.Attachments.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    private void AddAttachment()
+    {
+        var v = newAttachment?.Trim();
+        if (string.IsNullOrEmpty(v)) return;
+        var list = AttachmentList;
+        if (!list.Contains(v)) list.Add(v);
+        Task.Attachments = string.Join(";", list);
+        newAttachment = "";
+    }
+
+    private void RemoveAttachment(string a)
+    {
+        var list = AttachmentList;
+        list.Remove(a);
+        Task.Attachments = string.Join(";", list);
+    }
 
     // Bridge the string DueDate (yyyy-MM-dd stored) to the <input type=date>.
     private DateTime? DueDateValue

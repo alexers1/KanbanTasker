@@ -1,80 +1,62 @@
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Kanban_WinUI.Services.Api
 {
-    /// <summary>How the client reaches the Kanban API.</summary>
-    public enum ApiConnectionMode
-    {
-        /// <summary>Direct LAN connection to the server's IP:port — no public/internet path.</summary>
-        LanIp = 0,
-
-        /// <summary>Reach the server through a public address (e.g. a domain via Cloudflare
-        /// Tunnel) when off the LAN. Not implemented yet — reserved as a sample.</summary>
-        DefaultUrl = 1
-    }
-
     /// <summary>
-    /// The thin client's connection setting: how to reach the Kanban API. The client
-    /// no longer knows anything about SQL Server; the API owns the database. Stored in
-    /// appsettings.json (exe folder first, then %LOCALAPPDATA%\Kanban.WinUI).
+    /// The thin client's only setting: the LAN IP:port of the Kanban API. There is deliberately
+    /// no public / web-login mode — the desktop client always connects directly to the server on
+    /// the local network, which keeps it simple and sidesteps TLS/certificate hassles. Stored in
+    /// appsettings.json (exe folder first, then %LOCALAPPDATA%\Kanban.WinUI); defaults to the
+    /// deployed server so a fresh install connects with no configuration.
     /// </summary>
     public class ApiConfig
     {
-        /// <summary>Which connection mode is active. LAN-by-IP is the implemented one.</summary>
-        public ApiConnectionMode Mode { get; set; } = ApiConnectionMode.LanIp;
-
-        /// <summary>Server IP address for <see cref="ApiConnectionMode.LanIp"/> (e.g. 192.168.5.2).
-        /// Defaults to the deployed server on the LAN.</summary>
         public string ServerIp { get; set; } = "192.168.5.2";
-
-        /// <summary>Server port for <see cref="ApiConnectionMode.LanIp"/> (the deployed API listens on 5001).</summary>
         public int ServerPort { get; set; } = 5001;
 
-        /// <summary>Public URL for <see cref="ApiConnectionMode.DefaultUrl"/>. Sample only, unused.</summary>
-        public string DefaultUrl { get; set; } = "";
-
-        /// <summary>The effective base URL the HttpClient talks to. Derived from the mode on save.
-        /// Defaults to the LAN server so a fresh install connects without configuration.</summary>
+        /// <summary>Effective base URL; persisted so an older config that only had BaseUrl still works.</summary>
         public string BaseUrl { get; set; } = "http://192.168.5.2:5001";
 
-        /// <summary>The configuration the app is running with (set after a successful connect).</summary>
+        /// <summary>The configuration the app is running with.</summary>
         public static ApiConfig? Current { get; set; }
 
-        private class AppSettings
-        {
-            public ApiConfig? Api { get; set; }
-        }
+        private class AppSettings { public ApiConfig? Api { get; set; } }
 
         private static string ExeSettingsPath => Path.Combine(AppContext.BaseDirectory, "appsettings.json");
         private static string AppDataSettingsPath => Path.Combine(App.AppDataFolder, "appsettings.json");
 
-        /// <summary>
-        /// Builds the base URL from the current mode.
-        /// LAN: http://ip:port (direct, skips any public/internet path).
-        /// Default URL: the stored public URL — NOT IMPLEMENTED, kept as a sample.
-        /// </summary>
-        public string BuildBaseUrl() => Mode switch
-        {
-            // TODO: DefaultUrl (public/domain access via Cloudflare Tunnel) is not implemented yet.
-            //       When added, validate the URL and reach the API through the tunnel here.
-            ApiConnectionMode.DefaultUrl => string.IsNullOrWhiteSpace(DefaultUrl) ? BaseUrl : DefaultUrl.Trim(),
-            _ => $"http://{ServerIp.Trim()}:{ServerPort}"
-        };
+        /// <summary>The direct LAN address: http://ip:port.</summary>
+        public string BuildBaseUrl() => $"http://{ServerIp.Trim()}:{ServerPort}";
 
-        /// <summary>Best-effort host/port from the stored BaseUrl, for prefilling the LAN fields
-        /// when an older config only had a raw URL.</summary>
+        /// <summary>True when the server address is on the local network (private IPv4 or loopback).
+        /// Backup/import are only offered on the LAN.</summary>
+        public bool IsLan => IsPrivateOrLoopback(ServerIp);
+
+        public static bool IsPrivateOrLoopback(string? host)
+        {
+            host = (host ?? "").Trim();
+            if (host.Length == 0) return false;
+            if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+            if (!IPAddress.TryParse(host, out var ip)) return false;
+            if (IPAddress.IsLoopback(ip)) return true;
+            var b = ip.GetAddressBytes();
+            if (b.Length != 4) return false;
+            return b[0] == 10
+                || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+                || (b[0] == 192 && b[1] == 168)
+                || (b[0] == 169 && b[1] == 254); // link-local
+        }
+
+        /// <summary>Best-effort host/port from the stored BaseUrl, for prefilling the fields.</summary>
         public (string Ip, int Port) HostPortFromBaseUrl()
         {
-            try
-            {
-                var uri = new Uri(NormalizedBaseUrl());
-                return (uri.Host, uri.Port);
-            }
-            catch { return ("localhost", 5000); }
+            try { var uri = new Uri(NormalizedBaseUrl()); return (uri.Host, uri.Port); }
+            catch { return ("192.168.5.2", 5001); }
         }
 
         public static ApiConfig? Load()
@@ -84,6 +66,7 @@ namespace Kanban_WinUI.Services.Api
                 try
                 {
                     if (!File.Exists(path)) continue;
+                    // Old files may carry extra fields (a removed Mode/DefaultUrl) — ignored on read.
                     var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path));
                     if (settings?.Api != null && !string.IsNullOrWhiteSpace(settings.Api.BaseUrl))
                         return settings.Api;
@@ -95,9 +78,7 @@ namespace Kanban_WinUI.Services.Api
 
         public void Save()
         {
-            // BaseUrl is set from BuildBaseUrl() by the caller (the settings dialog) before
-            // saving; here we just persist. We do NOT recompute it, so a config loaded from
-            // an older file that only had BaseUrl keeps working.
+            BaseUrl = BuildBaseUrl();
             string json = JsonSerializer.Serialize(
                 new AppSettings { Api = this },
                 new JsonSerializerOptions { WriteIndented = true });
@@ -119,7 +100,7 @@ namespace Kanban_WinUI.Services.Api
             {
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(6) };
                 var resp = await http.GetAsync(NormalizedBaseUrl());
-                return resp.IsSuccessStatusCode ? null : $"API returned HTTP {(int)resp.StatusCode}.";
+                return resp.IsSuccessStatusCode ? null : $"API at {BuildBaseUrl()} returned HTTP {(int)resp.StatusCode}.";
             }
             catch (Exception ex)
             {
@@ -127,9 +108,7 @@ namespace Kanban_WinUI.Services.Api
             }
         }
 
-        /// <summary>The stored effective base URL, guaranteed to end with a single '/'
-        /// (so relative paths resolve correctly). This is the authoritative runtime value.</summary>
-        public string NormalizedBaseUrl() =>
-            BaseUrl.TrimEnd('/') + "/";
+        /// <summary>The stored effective base URL, guaranteed to end with a single '/'.</summary>
+        public string NormalizedBaseUrl() => BaseUrl.TrimEnd('/') + "/";
     }
 }

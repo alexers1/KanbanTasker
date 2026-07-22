@@ -103,58 +103,31 @@
                         <TextBlock
                             FontSize="12"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="Choose how this client reaches the Kanban server. The setting is verified before it is saved and takes effect after restarting the app."
+                            Text="This client connects directly to the Kanban server on your local network by IP address (no public/internet path, so no certificates to deal with). The default is the deployed server; change it only if the server's address changes. It is verified before it is saved and takes effect after restarting the app."
                             TextWrapping="Wrap" />
 
-                        <RadioButtons x:Name="ConnModeRadios" SelectionChanged="ConnMode_SelectionChanged">
-                            <RadioButton Tag="LanIp" Content="LAN — connect directly by IP address" />
-                            <RadioButton Tag="DefaultUrl" IsEnabled="False" Content="Default URL — public address (coming soon)" />
-                        </RadioButtons>
-
-                        <!-- LAN IP mode (implemented): direct in-network connection to the server -->
-                        <StackPanel x:Name="PanelLanIp" Spacing="8">
-                            <TextBlock
-                                FontSize="12"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Text="On the same network as the server, connect straight to its IP address — no internet or public path is involved."
-                                TextWrapping="Wrap" />
-                            <Grid ColumnSpacing="10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="110" />
-                                </Grid.ColumnDefinitions>
-                                <TextBox
-                                    x:Name="CfgServerIpBox"
-                                    Header="Server IP address"
-                                    PlaceholderText="192.168.5.2"
-                                    TextChanged="ConnField_Changed" />
-                                <TextBox
-                                    x:Name="CfgServerPortBox"
-                                    Grid.Column="1"
-                                    Header="Port"
-                                    PlaceholderText="5001"
-                                    TextChanged="ConnField_Changed" />
-                            </Grid>
-                            <TextBlock
-                                x:Name="ConnUrlPreview"
-                                FontSize="12"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Text="" />
-                        </StackPanel>
-
-                        <!-- Default URL mode (sample only — not implemented) -->
-                        <StackPanel x:Name="PanelDefaultUrl" Spacing="8" Visibility="Collapsed">
-                            <TextBlock
-                                FontSize="12"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Text="Reserved for reaching the server through a public address (e.g. a domain via Cloudflare Tunnel) when you are off the LAN. Not implemented yet."
-                                TextWrapping="Wrap" />
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="110" />
+                            </Grid.ColumnDefinitions>
                             <TextBox
-                                x:Name="CfgDefaultUrlBox"
-                                Header="Public URL"
-                                PlaceholderText="https://kanban.example.com"
-                                IsEnabled="False" />
-                        </StackPanel>
+                                x:Name="CfgServerIpBox"
+                                Header="Server IP address"
+                                PlaceholderText="192.168.5.2"
+                                TextChanged="ConnField_Changed" />
+                            <TextBox
+                                x:Name="CfgServerPortBox"
+                                Grid.Column="1"
+                                Header="Port"
+                                PlaceholderText="5001"
+                                TextChanged="ConnField_Changed" />
+                        </Grid>
+                        <TextBlock
+                            x:Name="ConnUrlPreview"
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="" />
 
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <Button
@@ -186,8 +159,18 @@
                         <TextBlock
                             FontSize="12"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="Export a full SQL Server backup (.bak) of your boards and tasks, or import a .bak made by this app or any SQL Server. Import restores into a separate staging database, then adds its boards next to yours — existing data is never overwritten or deleted."
+                            Text="Export downloads a full backup (.bak) of the server's database to this PC; import uploads a .bak back. Import merges by a stable id — re-importing the same backup changes nothing, and missing items are restored. Available on the local network only (a full backup can be large)."
                             TextWrapping="Wrap" />
+                        <InfoBar
+                            x:Name="BackupLanNote"
+                            IsClosable="False"
+                            IsOpen="True"
+                            Message="You're not on the server's local network. Connect over the LAN to back up or import."
+                            Severity="Warning"
+                            Visibility="Collapsed" />
+                        <CheckBox
+                            x:Name="ChkOverwrite"
+                            Content="Overwrite: let the backup replace matching items (full restore, repairs corrupted data)" />
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <Button
                                 x:Name="BtnBackup"
@@ -249,19 +232,12 @@
                         <TextBlock
                             FontSize="12"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="Attachment files are kept in this folder — the database stores only their names, so it stays small and moving computers is just copying this folder (a network share like \\server\kanban works too)."
+                            Text="Attachments are stored as links (path references), not uploaded files. A card can point at a file or a whole folder on this PC; the database only remembers the machine name and the path. Open a link to jump straight to it in File Explorer. Because nothing is copied, there's no attachments folder to manage and the database stays tiny."
                             TextWrapping="Wrap" />
                         <TextBlock
                             FontSize="12"
                             FontWeight="SemiBold"
-                            Text="{x:Bind ViewModel.AttachmentsRoot, Mode=OneWay}"
-                            TextWrapping="Wrap" />
-                        <Button Click="BtnMigrateAttachments_Click" Content="Move to another folder…" />
-                        <TextBlock
-                            FontSize="12"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="{x:Bind ViewModel.AttachmentStatusText, Mode=OneWay}"
-                            TextWrapping="Wrap" />
+                            Text="{x:Bind ViewModel.ThisMachineName}" />
                     </StackPanel>
 
                     <!-- ============ About ============ -->

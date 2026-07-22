@@ -22,12 +22,13 @@ namespace KanbanTasker.Model.Services
         Task<int> ArchiveCompletedTasksAsync();
 
         /// <summary>
-        /// Restores a .bak into the KanbanTaskerImport staging database, then merges its
-        /// boards into the live database as NEW boards (never overwrites existing data).
-        /// If space is tight, completed tasks go straight to the archive database.
-        /// Returns a human-readable summary.
+        /// Restores a .bak into the KanbanTaskerImport staging database, then merges it into the
+        /// live database by Uuid (idempotent — re-importing the same backup changes nothing, and
+        /// missing rows are restored). With <paramref name="overwrite"/> = false the newer row
+        /// wins (by UpdatedAt); with true the backup wins on every match (a full restore that
+        /// repairs even newer-but-corrupted rows). Nothing is ever deleted. Returns a summary.
         /// </summary>
-        Task<string> ImportBackupAsync(string bakPath);
+        Task<string> ImportBackupAsync(string bakPath, bool overwrite = false);
     }
 
     public class DatabaseUsage

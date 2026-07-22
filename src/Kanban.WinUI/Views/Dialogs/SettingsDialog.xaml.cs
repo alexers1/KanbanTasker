@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Kanban_WinUI.ViewModels;
 using Kanban_WinUI.Services.Api;
 using KanbanTasker.Model.Services;
@@ -20,13 +21,12 @@ namespace Kanban_WinUI.Views.Dialogs
         {
             InitializeComponent();
 
-            ViewModel = new SettingsViewModel(
-                App.GetService<IDatabaseServices>(),
-                App.GetService<Kanban_WinUI.Services.AttachmentService>());
+            ViewModel = new SettingsViewModel(App.GetService<IDatabaseServices>());
             DataContext = ViewModel;
 
-            // Connection page: prefill the mode + fields and show live status
+            // Connection page: prefill the fields and show live status
             InitConnectionUi();
+            UpdateBackupLanState();   // backup/import are LAN-only
 
             CategoryList.SelectedIndex = 0;
         }
@@ -53,10 +53,9 @@ namespace Kanban_WinUI.Views.Dialogs
         {
             var cfg = ApiConfig.Current ?? new ApiConfig();
 
-            // IP/port: prefer the stored fields; fall back to parsing an older raw BaseUrl.
             string ip = cfg.ServerIp;
             int port = cfg.ServerPort;
-            if (string.IsNullOrWhiteSpace(ip) || ip == "localhost")
+            if (string.IsNullOrWhiteSpace(ip))
             {
                 var (parsedIp, parsedPort) = cfg.HostPortFromBaseUrl();
                 if (!string.IsNullOrWhiteSpace(parsedIp)) { ip = parsedIp; port = parsedPort; }
@@ -64,51 +63,18 @@ namespace Kanban_WinUI.Views.Dialogs
 
             CfgServerIpBox.Text = ip;
             CfgServerPortBox.Text = port.ToString();
-            CfgDefaultUrlBox.Text = cfg.DefaultUrl;
-
-            SelectModeRadio(cfg.Mode);      // fires ConnMode_SelectionChanged -> panel visibility + preview
+            UpdateConnPreview();
             _ = ViewModel.LoadConnectionStatusAsync();
         }
 
-        private void SelectModeRadio(ApiConnectionMode mode)
-        {
-            foreach (var item in ConnModeRadios.Items)
-            {
-                if (item is RadioButton rb && rb.Tag?.ToString() == mode.ToString())
-                {
-                    ConnModeRadios.SelectedItem = rb;
-                    return;
-                }
-            }
-            ConnModeRadios.SelectedIndex = 0;   // default to LAN
-        }
-
-        private ApiConnectionMode SelectedMode() =>
-            (ConnModeRadios.SelectedItem as RadioButton)?.Tag?.ToString() == "DefaultUrl"
-                ? ApiConnectionMode.DefaultUrl
-                : ApiConnectionMode.LanIp;
-
         private ApiConfig BuildConfigFromUi()
         {
-            int port = int.TryParse(CfgServerPortBox.Text?.Trim(), out var p) ? p : 5000;
+            int port = int.TryParse(CfgServerPortBox.Text?.Trim(), out var p) ? p : 5001;
             return new ApiConfig
             {
-                Mode = SelectedMode(),
-                ServerIp = string.IsNullOrWhiteSpace(CfgServerIpBox.Text) ? "localhost" : CfgServerIpBox.Text.Trim(),
-                ServerPort = port,
-                DefaultUrl = CfgDefaultUrlBox.Text?.Trim() ?? ""
+                ServerIp = string.IsNullOrWhiteSpace(CfgServerIpBox.Text) ? "192.168.5.2" : CfgServerIpBox.Text.Trim(),
+                ServerPort = port
             };
-        }
-
-        private void ConnMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            // Guarded: this can fire while the page is still being built.
-            if (PanelLanIp == null || PanelDefaultUrl == null) return;
-
-            bool lan = SelectedMode() == ApiConnectionMode.LanIp;
-            PanelLanIp.Visibility = lan ? Visibility.Visible : Visibility.Collapsed;
-            PanelDefaultUrl.Visibility = lan ? Visibility.Collapsed : Visibility.Visible;
-            UpdateConnPreview();
         }
 
         private void ConnField_Changed(object sender, TextChangedEventArgs e) => UpdateConnPreview();
@@ -116,9 +82,7 @@ namespace Kanban_WinUI.Views.Dialogs
         private void UpdateConnPreview()
         {
             if (ConnUrlPreview == null) return;
-            ConnUrlPreview.Text = SelectedMode() == ApiConnectionMode.LanIp
-                ? $"Will connect to: {BuildConfigFromUi().BuildBaseUrl()}"
-                : "";
+            ConnUrlPreview.Text = $"Will connect to: {BuildConfigFromUi().BuildBaseUrl()}";
         }
 
         private async void BtnTestSaveConn_Click(object sender, RoutedEventArgs e)
@@ -131,7 +95,17 @@ namespace Kanban_WinUI.Views.Dialogs
             await ViewModel.TestAndSaveApiAsync(cfg);
         }
 
-        // === Backup & import ===
+        // === Backup & import (LAN only) — the .bak streams down to / up from this PC ===
+
+        /// <summary>Grey out backup/import unless the client is on the LAN.</summary>
+        private void UpdateBackupLanState()
+        {
+            bool lan = ApiConfig.Current?.IsLan ?? false;
+            if (BtnBackup != null) BtnBackup.IsEnabled = lan;
+            if (BtnImport != null) BtnImport.IsEnabled = lan;
+            if (ChkOverwrite != null) ChkOverwrite.IsEnabled = lan;
+            if (BackupLanNote != null) BackupLanNote.Visibility = lan ? Visibility.Collapsed : Visibility.Visible;
+        }
 
         private async void BtnBackup_Click(object sender, RoutedEventArgs e)
         {
@@ -147,8 +121,30 @@ namespace Kanban_WinUI.Views.Dialogs
             WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
 
             var file = await picker.PickSaveFileAsync();
-            if (file != null)
-                await ViewModel.BackupToAsync(file.Path);
+            if (file == null) return;
+
+            ViewModel.IsBusy = true;
+            ViewModel.StatusText = "Backing up the server database and downloading…";
+            try
+            {
+                var http = App.GetService<System.Net.Http.HttpClient>();
+                using var resp = await http.GetAsync("api/database/backup/download",
+                    System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    ViewModel.StatusText = resp.StatusCode == System.Net.HttpStatusCode.Forbidden
+                        ? "Backup is only available on the local network."
+                        : $"Backup failed: HTTP {(int)resp.StatusCode}.";
+                    return;
+                }
+                using var src = await resp.Content.ReadAsStreamAsync();
+                using var dst = await file.OpenStreamForWriteAsync();
+                dst.SetLength(0);
+                await src.CopyToAsync(dst);
+                ViewModel.StatusText = $"Backup saved to {file.Path}";
+            }
+            catch (Exception ex) { ViewModel.StatusText = "Backup failed: " + ex.Message; }
+            finally { ViewModel.IsBusy = false; }
         }
 
         private async void BtnImport_Click(object sender, RoutedEventArgs e)
@@ -162,8 +158,40 @@ namespace Kanban_WinUI.Views.Dialogs
             WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
 
             var file = await picker.PickSingleFileAsync();
-            if (file != null)
-                await ViewModel.ImportFromAsync(file.Path);
+            if (file == null) return;
+
+            bool overwrite = ChkOverwrite?.IsChecked == true;
+            ViewModel.IsBusy = true;
+            ViewModel.StatusText = overwrite ? "Uploading and restoring (overwrite)…" : "Uploading and importing…";
+            try
+            {
+                var http = App.GetService<System.Net.Http.HttpClient>();
+                using var src = await file.OpenStreamForReadAsync();
+                using var content = new System.Net.Http.MultipartFormDataContent();
+                var part = new System.Net.Http.StreamContent(src);
+                part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+                content.Add(part, "file", file.Name);
+
+                string url = $"api/database/import/upload?overwrite={(overwrite ? "true" : "false")}";
+                using var resp = await http.PostAsync(url, content);
+                string bodyText = await resp.Content.ReadAsStringAsync();
+                if (!resp.IsSuccessStatusCode)
+                {
+                    ViewModel.StatusText = resp.StatusCode == System.Net.HttpStatusCode.Forbidden
+                        ? "Import is only available on the local network."
+                        : $"Import failed: HTTP {(int)resp.StatusCode}.";
+                    return;
+                }
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(bodyText);
+                    ViewModel.StatusText = doc.RootElement.GetProperty("message").GetString() ?? "Import complete.";
+                }
+                catch { ViewModel.StatusText = "Import complete."; }
+                await ViewModel.LoadUsageAsync();
+            }
+            catch (Exception ex) { ViewModel.StatusText = "Import failed: " + ex.Message; }
+            finally { ViewModel.IsBusy = false; }
         }
 
         // === Storage ===
@@ -174,21 +202,5 @@ namespace Kanban_WinUI.Views.Dialogs
                 await ViewModel.ArchiveCompletedAsync();
         }
 
-        // === Attachments ===
-
-        private async void BtnMigrateAttachments_Click(object sender, RoutedEventArgs e)
-        {
-            if (ViewModel.IsBusy || App.MainAppWindow == null)
-                return;
-
-            var picker = new FolderPicker();
-            picker.FileTypeFilter.Add("*");
-            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainAppWindow);
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
-
-            var folder = await picker.PickSingleFolderAsync();
-            if (folder != null)
-                await ViewModel.MigrateAttachmentsAsync(folder.Path);
-        }
     }
 }

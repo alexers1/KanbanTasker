@@ -21,6 +21,12 @@ builder.Services
 
 builder.Services.AddOpenApi();
 
+// Allow large .bak uploads (LAN-only import); the default multipart limit is ~128 MB.
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+{
+    o.MultipartBodyLengthLimit = long.MaxValue;
+});
+
 // Permissive CORS for the WinUI client and the future Blazor WASM front-end.
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
@@ -34,10 +40,32 @@ try
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<KanbanTasker.Services.Database.Db>();
     db.Database.EnsureCreated();
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('tblTasks','Attachments') IS NULL " +
-        "ALTER TABLE tblTasks ADD Attachments nvarchar(max) NOT NULL DEFAULT N''");
-    app.Logger.LogInformation("Database ready (EnsureCreated + schema upgrade).");
+
+    // Add columns that EnsureCreated won't add to a pre-existing database: Attachments, and
+    // the Uuid + Created/UpdatedAt stamps used for idempotent backup import. NEWID()/121-format
+    // defaults backfill existing rows. ALTER and the timestamp backfill run in separate batches
+    // so the new columns resolve.
+    db.Database.ExecuteSqlRaw(@"
+IF COL_LENGTH('tblTasks','Attachments') IS NULL ALTER TABLE tblTasks   ADD Attachments nvarchar(max) NOT NULL DEFAULT N'';
+IF COL_LENGTH('tblBoards','Uuid')       IS NULL ALTER TABLE tblBoards  ADD Uuid uniqueidentifier NOT NULL DEFAULT NEWID();
+IF COL_LENGTH('tblBoards','CreatedAt')  IS NULL ALTER TABLE tblBoards  ADD CreatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblBoards','UpdatedAt')  IS NULL ALTER TABLE tblBoards  ADD UpdatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblColumns','Uuid')      IS NULL ALTER TABLE tblColumns ADD Uuid uniqueidentifier NOT NULL DEFAULT NEWID();
+IF COL_LENGTH('tblColumns','CreatedAt') IS NULL ALTER TABLE tblColumns ADD CreatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblColumns','UpdatedAt') IS NULL ALTER TABLE tblColumns ADD UpdatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblTasks','Uuid')        IS NULL ALTER TABLE tblTasks   ADD Uuid uniqueidentifier NOT NULL DEFAULT NEWID();
+IF COL_LENGTH('tblTasks','CreatedAt')   IS NULL ALTER TABLE tblTasks   ADD CreatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblTasks','UpdatedAt')   IS NULL ALTER TABLE tblTasks   ADD UpdatedAt nvarchar(40) NOT NULL DEFAULT '';");
+
+    db.Database.ExecuteSqlRaw(@"
+UPDATE tblBoards  SET CreatedAt = CONVERT(nvarchar(40), SYSUTCDATETIME(), 121) WHERE CreatedAt = '';
+UPDATE tblBoards  SET UpdatedAt = CreatedAt WHERE UpdatedAt = '';
+UPDATE tblColumns SET CreatedAt = CONVERT(nvarchar(40), SYSUTCDATETIME(), 121) WHERE CreatedAt = '';
+UPDATE tblColumns SET UpdatedAt = CreatedAt WHERE UpdatedAt = '';
+UPDATE tblTasks   SET CreatedAt = CONVERT(nvarchar(40), SYSUTCDATETIME(), 121) WHERE CreatedAt = '';
+UPDATE tblTasks   SET UpdatedAt = CreatedAt WHERE UpdatedAt = '';");
+
+    app.Logger.LogInformation("Database ready (EnsureCreated + schema upgrade + stamp backfill).");
 }
 catch (Exception ex)
 {

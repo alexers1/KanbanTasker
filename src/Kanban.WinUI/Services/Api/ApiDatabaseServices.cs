@@ -31,9 +31,10 @@ namespace Kanban_WinUI.Services.Api
         public async Task BackupDBAsync(string destPath) =>
             await _http.PostAsJsonAsync("api/database/backup", new PathRequest(destPath), _json);
 
-        public async Task<string> ImportBackupAsync(string bakPath)
+        public async Task<string> ImportBackupAsync(string bakPath, bool overwrite = false)
         {
-            var resp = await _http.PostAsJsonAsync("api/database/import", new PathRequest(bakPath), _json);
+            var url = $"api/database/import?overwrite={(overwrite ? "true" : "false")}";
+            var resp = await _http.PostAsJsonAsync(url, new PathRequest(bakPath), _json);
             var body = await resp.Content.ReadFromJsonAsync<MessageResponse>(_json);
             return body?.Message ?? "";
         }

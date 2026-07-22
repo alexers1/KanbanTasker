@@ -128,6 +128,11 @@
                                             {
                                                 <span class="chip tag">@tag</span>
                                             }
+                                            @{ var attachCount = AttachmentCount(t.Attachments); }
+                                            @if (attachCount > 0)
+                                            {
+                                                <span class="chip" title="@attachCount attachment link(s)">📎 @attachCount</span>
+                                            }
                                         </div>
                                     </div>
                                 }
@@ -442,6 +447,11 @@
         string.IsNullOrWhiteSpace(tags)
             ? Enumerable.Empty<string>()
             : tags.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static int AttachmentCount(string? attachments) =>
+        string.IsNullOrWhiteSpace(attachments)
+            ? 0
+            : attachments.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
 
     private bool IsOverdue(TaskDTO t) =>
         DateTime.TryParse(t.DueDate, out var d) && d.Date < DateTime.Today && t.Category != "Completed";

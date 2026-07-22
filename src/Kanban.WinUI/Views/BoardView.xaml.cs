@@ -303,7 +303,8 @@ namespace Kanban_WinUI.Views
             }
         }
 
-        // === Attachments: files live in the attachments folder, DB stores names only ===
+        // === Attachments: path references only (a file or a whole folder), opened in Explorer.
+        //     Nothing is uploaded/copied — the DB stores a "MACHINE\path" pointer. ===
 
         private async void AddAttachment_Click(object sender, RoutedEventArgs e)
         {
@@ -316,44 +317,48 @@ namespace Kanban_WinUI.Views
             WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
 
             var file = await picker.PickSingleFileAsync();
-            if (file == null)
+            if (file != null)
+                AddReference(file.Path);
+        }
+
+        private async void AddAttachmentFolder_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel?.CurrentTask == null || App.MainAppWindow == null)
                 return;
 
-            try
-            {
-                var attachments = App.GetService<Services.AttachmentService>();
-                string name = attachments.AddAttachment(file.Path);
-                ViewModel.CurrentTask.Attachments.Add(name);
-            }
-            catch (Exception ex)
-            {
-                App.GetService<KanbanTasker.Model.Services.IAppNotificationService>()
-                    .DisplayNotificationAsync("Failed to add attachment: " + ex.Message, 4000);
-            }
+            var picker = new Windows.Storage.Pickers.FolderPicker();
+            picker.FileTypeFilter.Add("*");
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainAppWindow);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder != null)
+                AddReference(folder.Path);
+        }
+
+        private void AddReference(string fullPath)
+        {
+            var reference = App.GetService<Services.AttachmentService>().MakeReference(fullPath);
+            if (!ViewModel!.CurrentTask.Attachments.Contains(reference))
+                ViewModel.CurrentTask.Attachments.Add(reference);
         }
 
         private void OpenAttachment_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button btn && btn.CommandParameter is string name)
+            if (sender is Button btn && btn.CommandParameter is string reference)
             {
-                try
-                {
-                    var path = App.GetService<Services.AttachmentService>().ResolvePath(name);
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
-                }
-                catch (Exception ex)
-                {
+                string? error = App.GetService<Services.AttachmentService>().OpenInExplorer(reference);
+                if (error != null)
                     App.GetService<KanbanTasker.Model.Services.IAppNotificationService>()
-                        .DisplayNotificationAsync("Could not open attachment: " + ex.Message, 4000);
-                }
+                        .DisplayNotificationAsync("Could not open attachment: " + error, 4000);
             }
         }
 
         private void RemoveAttachment_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button btn && btn.CommandParameter is string name && ViewModel?.CurrentTask != null)
+            if (sender is Button btn && btn.CommandParameter is string reference && ViewModel?.CurrentTask != null)
             {
-                ViewModel.CurrentTask.Attachments.Remove(name);  // link only; the file stays in the folder
+                ViewModel.CurrentTask.Attachments.Remove(reference);  // reference only; the file/folder is untouched
             }
         }
 

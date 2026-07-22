@@ -65,7 +65,7 @@ namespace KanbanTasker.Services.SqlServer
             return await cmd.ExecuteScalarAsync() as string ?? Path.GetTempPath();
         }
 
-        public async Task<string> ImportBackupAsync(string bakPath)
+        public async Task<string> ImportBackupAsync(string bakPath, bool overwrite = false)
         {
             // 1. Copy the .bak into the SQL Server instance's own backup directory. The RESTORE
             //    reads the file AS the SQL Server service account, which cannot access the API
@@ -117,78 +117,111 @@ namespace KanbanTasker.Services.SqlServer
                     if ((int)(await check.ExecuteScalarAsync())! != 1) throw;
                 }
 
-                // 3. Space check: route completed tasks to the archive DB when the merge could crowd the limit
-                var usage = await GetDatabaseUsageAsync();
-                bool tight = usage.Percent >= 80;
-                bool hasAttach;
-                using (var col = new SqlCommand(
-                    "SELECT CASE WHEN COL_LENGTH('KanbanTaskerImport.dbo.tblTasks','Attachments') IS NULL THEN 0 ELSE 1 END", main))
-                    hasAttach = (int)(await col.ExecuteScalarAsync())! == 1;
-                string attachExpr = hasAttach ? "t.Attachments" : "N''";
-
-                if (tight) await ArchiveCompletedTasksAsync(); // also makes room in the live database
-
-                // 4. Merge staging boards into the live database as new boards (ID remap, nothing deleted)
-                int boards = 0, tasks = 0, archived = 0;
-                var stagedBoards = new List<(int Id, string Name, string Notes)>();
-                using (var read = new SqlCommand("SELECT Id, Name, Notes FROM KanbanTaskerImport.dbo.tblBoards", main))
-                using (var rd = await read.ExecuteReaderAsync())
-                    while (await rd.ReadAsync()) stagedBoards.Add((rd.GetInt32(0), rd.GetString(1), rd.GetString(2)));
-
-                foreach (var b in stagedBoards)
+                // 3. Make the staging schema uniform with the live one (older backups may lack
+                //    the Uuid / timestamp / Attachments columns) and backfill any blanks. ALTERs
+                //    must run in the staging DB's own context (cross-database ALTER isn't allowed),
+                //    and after the ALTER batch so the new columns resolve in the backfill batch.
+                using (var stage = new SqlConnection(importConn))
                 {
-                    using var insBoard = new SqlCommand(
-                        "INSERT INTO tblBoards (Name, Notes) OUTPUT INSERTED.Id VALUES (@n, @o)", main);
-                    insBoard.Parameters.AddWithValue("@n", b.Name);
-                    insBoard.Parameters.AddWithValue("@o", b.Notes);
-                    int newId = (int)(await insBoard.ExecuteScalarAsync())!;
-                    boards++;
-
-                    using var insCols = new SqlCommand(@"
-                        INSERT INTO tblColumns (BoardId, ColumnName, Position, MaxTaskLimit)
-                        SELECT @nid, ColumnName, Position, MaxTaskLimit
-                        FROM KanbanTaskerImport.dbo.tblColumns WHERE BoardId = @oid", main);
-                    insCols.Parameters.AddWithValue("@nid", newId);
-                    insCols.Parameters.AddWithValue("@oid", b.Id);
-                    await insCols.ExecuteNonQueryAsync();
-
-                    string activeFilter = tight ? "AND t.Category <> N'Completed'" : "";
-                    using var insTasks = new SqlCommand($@"
-                        INSERT INTO tblTasks (BoardId, Title, Description, Category, ColumnIndex, ColorKey, Tags,
-                                              Attachments, DateCreated, DueDate, StartDate, FinishDate, TimeDue, ReminderTime)
-                        SELECT @nid, t.Title, t.Description, t.Category, t.ColumnIndex, t.ColorKey, t.Tags,
-                               {attachExpr}, t.DateCreated, t.DueDate, t.StartDate, t.FinishDate, t.TimeDue, t.ReminderTime
-                        FROM KanbanTaskerImport.dbo.tblTasks t WHERE t.BoardId = @oid {activeFilter}", main);
-                    insTasks.Parameters.AddWithValue("@nid", newId);
-                    insTasks.Parameters.AddWithValue("@oid", b.Id);
-                    tasks += await insTasks.ExecuteNonQueryAsync();
-
-                    if (tight)
-                    {
-                        // Completed tasks from the backup go straight to the archive database
-                        using var insArch = new SqlCommand($@"
-                            INSERT INTO KanbanTaskerArchive.dbo.tblArchivedTasks
-                                (OriginalTaskId, BoardName, Title, Description, Category, ColorKey, Tags, Attachments,
-                                 DateCreated, DueDate, StartDate, FinishDate, TimeDue, ReminderTime)
-                            SELECT t.Id, @bn, t.Title, t.Description, t.Category, t.ColorKey, t.Tags, {attachExpr},
-                                   t.DateCreated, t.DueDate, t.StartDate, t.FinishDate, t.TimeDue, t.ReminderTime
-                            FROM KanbanTaskerImport.dbo.tblTasks t
-                            WHERE t.BoardId = @oid AND t.Category = N'Completed'", main);
-                        insArch.Parameters.AddWithValue("@bn", b.Name);
-                        insArch.Parameters.AddWithValue("@oid", b.Id);
-                        archived += await insArch.ExecuteNonQueryAsync();
-                    }
+                    await stage.OpenAsync();
+                    await ExecAsync(stage, StagingSchemaSql, 120);
+                    await ExecAsync(stage, StagingBackfillSql, 120);
                 }
 
-                return archived > 0
-                    ? $"Imported {boards} board(s) with {tasks} task(s); {archived} completed task(s) went to the archive database (space saving)."
-                    : $"Imported {boards} board(s) with {tasks} task(s).";
+                // 4. Upsert by Uuid — idempotent and self-healing. Re-importing the same backup
+                //    changes nothing; a newer backup (higher UpdatedAt) repairs matching rows; new
+                //    Uuids are inserted. Nothing is deleted. Boards first so columns/tasks can remap
+                //    their BoardId through the board's Uuid.
+                int boards = await ExecAsync(main, MergeBoardsSql(overwrite), 300);
+                await ExecAsync(main, MergeColumnsSql(overwrite), 300);
+                int tasks = await ExecAsync(main, MergeTasksSql(overwrite), 300);
+
+                return overwrite
+                    ? $"Restored (overwrite): {boards} board(s) and {tasks} task(s) applied from the backup."
+                    : $"Imported/updated {boards} board(s) and {tasks} task(s).";
             }
             finally
             {
                 try { File.Delete(temp); } catch { }
             }
         }
+
+        private static async Task<int> ExecAsync(SqlConnection conn, string sql, int timeoutSec)
+        {
+            using var cmd = new SqlCommand(sql, conn) { CommandTimeout = timeoutSec };
+            return await cmd.ExecuteNonQueryAsync();
+        }
+
+        // --- Import SQL (upsert by Uuid) -----------------------------------------------------
+
+        // Normalize the staging (KanbanTaskerImport) schema — run in that DB's context.
+        private const string StagingSchemaSql = @"
+IF COL_LENGTH('tblBoards','Uuid')       IS NULL ALTER TABLE tblBoards  ADD Uuid uniqueidentifier NOT NULL DEFAULT NEWID();
+IF COL_LENGTH('tblBoards','CreatedAt')  IS NULL ALTER TABLE tblBoards  ADD CreatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblBoards','UpdatedAt')  IS NULL ALTER TABLE tblBoards  ADD UpdatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblColumns','Uuid')      IS NULL ALTER TABLE tblColumns ADD Uuid uniqueidentifier NOT NULL DEFAULT NEWID();
+IF COL_LENGTH('tblColumns','CreatedAt') IS NULL ALTER TABLE tblColumns ADD CreatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblColumns','UpdatedAt') IS NULL ALTER TABLE tblColumns ADD UpdatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblTasks','Uuid')        IS NULL ALTER TABLE tblTasks   ADD Uuid uniqueidentifier NOT NULL DEFAULT NEWID();
+IF COL_LENGTH('tblTasks','CreatedAt')   IS NULL ALTER TABLE tblTasks   ADD CreatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblTasks','UpdatedAt')   IS NULL ALTER TABLE tblTasks   ADD UpdatedAt nvarchar(40) NOT NULL DEFAULT '';
+IF COL_LENGTH('tblTasks','Attachments') IS NULL ALTER TABLE tblTasks   ADD Attachments nvarchar(max) NOT NULL DEFAULT N'';";
+
+        private const string StagingBackfillSql = @"
+UPDATE tblBoards  SET CreatedAt = CONVERT(nvarchar(40), SYSUTCDATETIME(), 121) WHERE CreatedAt = '';
+UPDATE tblBoards  SET UpdatedAt = CreatedAt WHERE UpdatedAt = '';
+UPDATE tblColumns SET CreatedAt = CONVERT(nvarchar(40), SYSUTCDATETIME(), 121) WHERE CreatedAt = '';
+UPDATE tblColumns SET UpdatedAt = CreatedAt WHERE UpdatedAt = '';
+UPDATE tblTasks   SET CreatedAt = CONVERT(nvarchar(40), SYSUTCDATETIME(), 121) WHERE CreatedAt = '';
+UPDATE tblTasks   SET UpdatedAt = CreatedAt WHERE UpdatedAt = '';";
+
+        // "Newest wins" by default; with overwrite the backup wins on every Uuid match.
+        private static string MatchCond(bool overwrite) => overwrite ? "" : "AND S.UpdatedAt > T.UpdatedAt";
+
+        private static string MergeBoardsSql(bool overwrite) => $@"
+MERGE tblBoards AS T
+USING KanbanTaskerImport.dbo.tblBoards AS S ON T.Uuid = S.Uuid
+WHEN MATCHED {MatchCond(overwrite)} THEN
+    UPDATE SET T.Name = S.Name, T.Notes = S.Notes, T.UpdatedAt = S.UpdatedAt
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (Name, Notes, Uuid, CreatedAt, UpdatedAt)
+    VALUES (S.Name, S.Notes, S.Uuid, S.CreatedAt, S.UpdatedAt);";
+
+        private static string MergeColumnsSql(bool overwrite) => $@"
+MERGE tblColumns AS T
+USING (
+    SELECT sc.ColumnName, sc.Position, sc.MaxTaskLimit, sc.Uuid, sc.CreatedAt, sc.UpdatedAt, lb.Id AS LiveBoardId
+    FROM KanbanTaskerImport.dbo.tblColumns sc
+    JOIN KanbanTaskerImport.dbo.tblBoards sb ON sb.Id = sc.BoardId
+    JOIN tblBoards lb ON lb.Uuid = sb.Uuid
+) AS S ON T.Uuid = S.Uuid
+WHEN MATCHED {MatchCond(overwrite)} THEN
+    UPDATE SET T.ColumnName = S.ColumnName, T.Position = S.Position, T.MaxTaskLimit = S.MaxTaskLimit,
+               T.BoardId = S.LiveBoardId, T.UpdatedAt = S.UpdatedAt
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (BoardId, ColumnName, Position, MaxTaskLimit, Uuid, CreatedAt, UpdatedAt)
+    VALUES (S.LiveBoardId, S.ColumnName, S.Position, S.MaxTaskLimit, S.Uuid, S.CreatedAt, S.UpdatedAt);";
+
+        private static string MergeTasksSql(bool overwrite) => $@"
+MERGE tblTasks AS T
+USING (
+    SELECT st.Title, st.Description, st.Category, st.ColumnIndex, st.ColorKey, st.Tags, st.Attachments,
+           st.DateCreated, st.DueDate, st.StartDate, st.FinishDate, st.TimeDue, st.ReminderTime,
+           st.Uuid, st.CreatedAt, st.UpdatedAt, lb.Id AS LiveBoardId
+    FROM KanbanTaskerImport.dbo.tblTasks st
+    JOIN KanbanTaskerImport.dbo.tblBoards sb ON sb.Id = st.BoardId
+    JOIN tblBoards lb ON lb.Uuid = sb.Uuid
+) AS S ON T.Uuid = S.Uuid
+WHEN MATCHED {MatchCond(overwrite)} THEN
+    UPDATE SET T.BoardId=S.LiveBoardId, T.Title=S.Title, T.Description=S.Description, T.Category=S.Category,
+               T.ColumnIndex=S.ColumnIndex, T.ColorKey=S.ColorKey, T.Tags=S.Tags, T.Attachments=S.Attachments,
+               T.DateCreated=S.DateCreated, T.DueDate=S.DueDate, T.StartDate=S.StartDate, T.FinishDate=S.FinishDate,
+               T.TimeDue=S.TimeDue, T.ReminderTime=S.ReminderTime, T.UpdatedAt=S.UpdatedAt
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (BoardId, Title, Description, Category, ColumnIndex, ColorKey, Tags, Attachments, DateCreated,
+            DueDate, StartDate, FinishDate, TimeDue, ReminderTime, Uuid, CreatedAt, UpdatedAt)
+    VALUES (S.LiveBoardId, S.Title, S.Description, S.Category, S.ColumnIndex, S.ColorKey, S.Tags, S.Attachments,
+            S.DateCreated, S.DueDate, S.StartDate, S.FinishDate, S.TimeDue, S.ReminderTime, S.Uuid, S.CreatedAt, S.UpdatedAt);";
 
         private static bool IsValidBackupFile(string path)
         {

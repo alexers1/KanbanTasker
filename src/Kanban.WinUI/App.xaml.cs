@@ -134,6 +134,20 @@ public partial class App : Application
         return ServiceProvider.GetRequiredService<T>();
     }
 
+    /// <summary>
+    /// Point the shared HttpClient at the current ApiConfig address. Only safe before the first
+    /// request (used by the startup connection dialog when the user corrects the IP/port).
+    /// </summary>
+    public static void ApplyApiBaseAddress()
+    {
+        try
+        {
+            if (_http != null && ApiConfig.Current != null)
+                _http.BaseAddress = new Uri(ApiConfig.Current.NormalizedBaseUrl());
+        }
+        catch (Exception ex) { AppendStartupLog("ApplyApiBaseAddress failed: " + ex.Message); }
+    }
+
     // === Startup diagnostics helpers ===
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
