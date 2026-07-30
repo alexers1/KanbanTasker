@@ -100,22 +100,23 @@
             </div>
 
             <div class="board-scroll">
-                <div class="columns">
+                <div class="columns" id="columns-container">
                     @foreach (var col in columns.OrderBy(c => c.Position))
                     {
                         var colTasks = TasksIn(col.ColumnName);
                         var over = colTasks.Count > col.MaxTaskLimit;
-                        <div class="column glass @(dragOverColumn == col.ColumnName ? "drop-target" : "") @(col.ColumnName == phoneColumn ? "phone-active" : "")"
+                        <div class="column glass @(dragOverColumn == col.ColumnName ? "drop-target" : "") @(col.ColumnName == phoneColumn ? "phone-active" : "") @(col.Id == landedColumnId ? "col-landed" : "")"
+                             @key="col.Id" data-col-id="@col.Id"
                              @ondragover:preventDefault="true"
                              @ondragover="() => dragOverColumn = col.ColumnName"
                              @ondragleave="() => dragOverColumn = null"
                              @ondrop="() => DropOn(col)">
-                            <div class="column-head">
+                            <div class="column-head" title="Drag to reorder">
                                 <span class="column-name">
                                     @col.ColumnName
                                     <span class="column-count @(over ? "over-limit" : "")">@colTasks.Count</span>
                                 </span>
-                                <button class="btn icon subtle" title="Delete column"
+                                <button class="btn icon subtle column-del" title="Delete column"
                                         @onclick="() => AskDeleteColumn(col)">🗑</button>
                             </div>
 
@@ -235,6 +236,12 @@
     private bool isCompact;                           // true at tablet/phone widths (<= 1024px)
     private DotNetObjectReference<Home>? selfRef;
 
+    // Column drag-to-reorder (SortableJS). Header press-and-hold, then drag.
+    private const int ColumnDragDelayMs = 180;        // brief hold before a column lifts
+    private const int ColumnDragAnimationMs = 180;    // neighbour slide duration
+    private int sortableBoardId = -1;                 // board the Sortable instance is bound to
+    private int landedColumnId = -1;                  // column playing its "settle" animation
+
     private List<string> ColumnNames => columns.OrderBy(c => c.Position).Select(c => c.ColumnName).ToList();
 
     protected override async System.Threading.Tasks.Task OnInitializedAsync()
@@ -257,6 +264,18 @@
             await JS.InvokeVoidAsync("kanbanLayout.register", selfRef);
             StateHasChanged();
         }
+
+        await EnsureColumnSort();
+    }
+
+    /// <summary>Bind SortableJS to the columns container once the board is rendered.
+    /// Re-binds after a board switch (the container element is recreated).</summary>
+    private async System.Threading.Tasks.Task EnsureColumnSort()
+    {
+        if (loading || currentBoard is null || selfRef is null) { sortableBoardId = -1; return; }
+        if (sortableBoardId == currentBoard.Id) return;
+        sortableBoardId = currentBoard.Id;
+        await JS.InvokeVoidAsync("kanbanDrag.initColumnSort", selfRef, ColumnDragDelayMs, ColumnDragAnimationMs);
     }
 
     public void Dispose()
@@ -353,6 +372,40 @@
 
         await Api.MoveTaskToColumnAsync(moved);
         if (currentBoard is not null) await LoadBoard(currentBoard);
+    }
+
+    // ===== Column reorder (drag a column header; SortableJS reports the new order) =====
+
+    /// <summary>Called from JS after a column drag ends, with the columns' ids in their
+    /// new left-to-right order. We renumber Position to match and persist the ones that
+    /// moved, so the order is remembered on the next load (columns render OrderBy Position).</summary>
+    [JSInvokable]
+    public async System.Threading.Tasks.Task OnColumnsReordered(int[] orderedIds, int droppedId)
+    {
+        var byId = columns.ToDictionary(c => c.Id);
+        var ordered = new List<ColumnDTO>(columns.Count);
+        foreach (var id in orderedIds)
+            if (byId.Remove(id, out var c)) ordered.Add(c);
+        foreach (var leftover in byId.Values) ordered.Add(leftover);   // safety: keep any unreported
+
+        var moved = new List<ColumnDTO>();
+        for (int i = 0; i < ordered.Count; i++)
+            if (ordered[i].Position != i) { ordered[i].Position = i; moved.Add(ordered[i]); }
+
+        columns = ordered;
+        landedColumnId = droppedId;          // play the settle animation on the dropped column
+        StateHasChanged();
+        _ = ClearLandedAfterAsync();         // clear it once the animation has run
+
+        foreach (var c in moved)
+            await Api.UpdateColumnIndexAsync(c);
+    }
+
+    private async System.Threading.Tasks.Task ClearLandedAfterAsync()
+    {
+        await System.Threading.Tasks.Task.Delay(400);
+        landedColumnId = -1;
+        await InvokeAsync(StateHasChanged);
     }
 
     // ===== Boards =====

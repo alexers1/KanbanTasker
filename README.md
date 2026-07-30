@@ -37,6 +37,15 @@ are the browser-tab icon and the sidebar logo.
 Responsive layouts: docked collapsible sidebar on desktop, an overlay drawer on tablet, and on
 phones a **column tab bar** — tap a column to view it full-width, one at a time.
 
+**Reorderable columns** — grab a column header and drag it to a new position. A brief
+press-and-hold arms the drag: the column lifts once, follows the cursor, and settles into its new
+slot on release, with the neighbours sliding to make room. The order is persisted (each column's
+`Position`) so it survives a reload. Reordering uses [SortableJS](https://github.com/SortableJS/Sortable),
+vendored locally under `wwwroot/lib/` (no CDN, works offline), because press-and-hold activation,
+touch dragging, and the reorder animation are exactly what the native HTML5 drag events — which
+Blazor supports and the cards already use — do not provide. Desktop and tablet only; the phone tab
+layout does not reorder.
+
 ## Identity & backup
 
 The database is **SQL Server Express** (`KanbanTasker`); the API creates/upgrades the schema on

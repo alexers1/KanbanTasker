@@ -79,6 +79,10 @@ public class KanbanApiClient
         return await resp.Content.ReadFromJsonAsync<RowOpResult>(Json) ?? new() { Success = resp.IsSuccessStatusCode };
     }
 
+    /// <summary>Persist a column's display order (Position) after a drag-reorder.</summary>
+    public async Task UpdateColumnIndexAsync(ColumnDTO column) =>
+        await _http.PutAsJsonAsync("api/columns/index", column, Json);
+
     // ===== Tasks =====
 
     public async Task<List<TaskDTO>> GetTasksAsync() =>
