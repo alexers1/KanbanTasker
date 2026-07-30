@@ -86,13 +86,26 @@
                 </div>
             </div>
 
+            <!-- Phone-only column tabs: tap a column to view it full-width, one at a time (see app.css) -->
+            <div class="phone-tabs">
+                @foreach (var col in columns.OrderBy(c => c.Position))
+                {
+                    <button class="phone-tab @(col.ColumnName == phoneColumn ? "active" : "")"
+                            @onclick="() => phoneColumn = col.ColumnName">
+                        @col.ColumnName
+                        <span class="phone-tab-count">@TasksIn(col.ColumnName).Count</span>
+                    </button>
+                }
+                <button class="phone-tab add" title="Add column" @onclick="() => showColumnDialog = true">＋</button>
+            </div>
+
             <div class="board-scroll">
                 <div class="columns">
                     @foreach (var col in columns.OrderBy(c => c.Position))
                     {
                         var colTasks = TasksIn(col.ColumnName);
                         var over = colTasks.Count > col.MaxTaskLimit;
-                        <div class="column glass @(dragOverColumn == col.ColumnName ? "drop-target" : "")"
+                        <div class="column glass @(dragOverColumn == col.ColumnName ? "drop-target" : "") @(col.ColumnName == phoneColumn ? "phone-active" : "")"
                              @ondragover:preventDefault="true"
                              @ondragover="() => dragOverColumn = col.ColumnName"
                              @ondragleave="() => dragOverColumn = null"
@@ -203,6 +216,7 @@
 
     private bool loading = true;
     private string banner = "";
+    private string? phoneColumn;   // the column shown in the phone tab layout
 
     // Dialog state
     private TaskDTO? editingTask;
@@ -278,6 +292,9 @@
     private async System.Threading.Tasks.Task LoadBoard(BoardDTO board)
     {
         columns = await Api.GetColumnsAsync(board.Id);
+        // Keep the phone-selected column valid (default to the first column).
+        if (phoneColumn == null || columns.All(c => c.ColumnName != phoneColumn))
+            phoneColumn = columns.OrderBy(c => c.Position).FirstOrDefault()?.ColumnName;
         var all = await Api.GetTasksAsync();
         tasks = all.Where(t => t.BoardId == board.Id).ToList();
     }

@@ -9,10 +9,10 @@ namespace KanbanTasker.Services
     public static class ServiceCollectionExtensions
     {
         /// <summary>
-        /// Active connection string, set at startup from appsettings.json
-        /// (see <see cref="DatabaseConfig"/>). Never hardcode credentials here.
-        /// The AddDbContext options lambda reads this at scope creation, so it can be
-        /// assigned after DI is built but before the first database access.
+        /// Active connection string, set at startup from appsettings.json by the API's
+        /// Program.cs. Never hardcode credentials here. The AddDbContext options lambda reads
+        /// this at scope creation, so it can be assigned after DI is built but before the
+        /// first database access.
         /// </summary>
         public static string ConnectionString { get; set; } = "";
 

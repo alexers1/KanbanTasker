@@ -16,19 +16,6 @@
     <ProjectReference Include="..\Kanban.Model\Kanban.Model.csproj" />
   </ItemGroup>
 
-  <!-- Share the WinUI app icons with the web client — the WinUI Assets are the single
-       authored source. This target syncs them into wwwroot before build so they serve
-       as normal static web assets:
-         AppIcon.ico (16→256px) -> /favicon.ico  (browser tab icon)
-         AppIcon.png (high-res)  -> /applogo.png  (sidebar brand logo)
-       Editing the WinUI icons automatically refreshes the web copies on the next build. -->
-  <Target Name="SyncSharedAssets" BeforeTargets="BeforeBuild">
-    <Copy SourceFiles="..\Kanban.WinUI\Assets\AppIcon.ico"
-          DestinationFiles="$(MSBuildProjectDirectory)\wwwroot\favicon.ico"
-          SkipUnchangedFiles="true" />
-    <Copy SourceFiles="..\Kanban.WinUI\Assets\AppIcon.png"
-          DestinationFiles="$(MSBuildProjectDirectory)\wwwroot\applogo.png"
-          SkipUnchangedFiles="true" />
-  </Target>
+  <!-- App icons (wwwroot/favicon.ico + applogo.png) are committed with this project. -->
 
 </Project>

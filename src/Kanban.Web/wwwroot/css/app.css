@@ -575,12 +575,15 @@ a { color: var(--accent); text-decoration: none; }
 
 .loading-progress { display: none; }
 
+/* Phone column tabs — hidden on larger screens (shown in the ≤640px block). */
+.phone-tabs { display: none; }
+
 /* ============================================================================
    Responsive layouts
    - Desktop (> 1024px): sidebar is a docked, collapsible column.
-   - Tablet / iPad (601–1024px): sidebar becomes an overlay drawer + scrim.
-   - Phone / Android (≤ 600px): full-bleed board, one column per swipe with
-     horizontal snap, full-height drawer.
+   - Tablet / iPad (641–1024px): sidebar becomes an overlay drawer; columns scroll.
+   - Phone (≤ 640px): full-bleed; a tab bar switches the visible column (one column
+     per screen, full width); settings/dialogs stack; bigger touch targets.
    ============================================================================ */
 
 @media (max-width: 1024px) {
@@ -606,31 +609,93 @@ a { color: var(--accent); text-decoration: none; }
   .column { width: 280px; }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .app-shell { padding: 0; }
   .app-shell.sidebar-collapsed { padding-left: 0; }
   .main { border-radius: 0; }
 
   .sidebar {
     top: 0; left: 0; bottom: 0;
-    width: 84vw;
-    max-width: 320px;
+    width: 86vw;
+    max-width: 340px;
     border-radius: 0;
   }
 
-  .board-header { padding: 12px 14px; }
-  .board-title { font-size: 18px; }
-  .board-notes { display: none; }
+  .topbar { padding: 8px 10px; }
+  .topbar-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .board-scroll {
-    padding: 4px 10px 12px;
-    scroll-snap-type: x mandatory;     /* one column per swipe */
+  .board-header { padding: 10px 14px; gap: 8px; }
+  .board-title { font-size: 17px; }
+  .board-notes { display: none; }
+  .board-header-actions .btn { padding: 7px 10px; }
+
+  /* Column tab bar: tap to switch the visible column. */
+  .phone-tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 2px 12px 8px;
+    flex-shrink: 0;
+    scrollbar-width: none;
   }
-  .columns { gap: 10px; }
-  .column { width: 86vw; scroll-snap-align: start; }
-  .add-column { width: 86vw; }
+  .phone-tabs::-webkit-scrollbar { display: none; }
+  .phone-tab {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 18px;
+    border: 1px solid var(--control-border);
+    background: var(--control-bg);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .phone-tab.active {
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    border-color: transparent;
+    color: #fff;
+    font-weight: 600;
+  }
+  .phone-tab.add { padding: 8px 13px; font-size: 15px; }
+  .phone-tab-count {
+    font-size: 11px;
+    background: var(--control-bg-hover);
+    border-radius: 9px;
+    padding: 0 6px;
+  }
+  .phone-tab.active .phone-tab-count { background: rgba(255, 255, 255, 0.22); }
+
+  /* One column fills the screen; no sideways scrolling. */
+  .board-scroll { overflow: hidden; padding: 0 12px 12px; }
+  .columns { gap: 0; height: 100%; align-items: stretch; }
+  .column { display: none; width: 100%; max-width: 100%; }
+  .column.phone-active { display: flex; height: 100%; }
+  .add-column { display: none; }   /* the "+" tab creates columns */
+
+  .card { padding: 14px 14px 14px 18px; }
+  .add-card-btn { padding: 12px; }
 
   .form-row { flex-direction: column; gap: 0; }
-  .modal { padding: 18px; }
-  .topbar-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modal { width: 94vw; padding: 18px; }
+
+  /* Settings: category chips on top, detail below. */
+  .settings-modal { width: 96vw; }
+  .settings-body { flex-direction: column; gap: 12px; min-height: 0; }
+  .settings-cats {
+    width: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--divider);
+    padding: 0 0 8px;
+    gap: 6px;
+    scrollbar-width: none;
+  }
+  .settings-cats::-webkit-scrollbar { display: none; }
+  .settings-cat { flex: 0 0 auto; white-space: nowrap; }
+  .settings-cat.active { box-shadow: none; background: var(--accent); color: #fff; }
 }
