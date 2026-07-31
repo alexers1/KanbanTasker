@@ -71,6 +71,13 @@
                             </label>
                             @if (busy) { <span class="spinner" style="width:20px;height:20px"></span> }
                         </div>
+                        @if (busy && uploadPct > 0)
+                        {
+                            <div style="margin-top:10px">
+                                <div class="usage-bar"><div class="usage-fill" style="width:@UploadPctCss"></div></div>
+                                <p class="muted" style="margin-top:6px">@((int)(uploadPct * 100))% uploaded</p>
+                            </div>
+                        }
                     }
                     @if (!string.IsNullOrEmpty(backupText)) { <p class="muted" style="margin-top:10px">@backupText</p> }
                 }
@@ -119,8 +126,10 @@
     private string usageText = "Checking database size…";
     private string archiveText = "";
     private string backupText = "";
+    private double uploadPct;
 
     private string UsagePercentCss => $"{Math.Min(100, Math.Max(0, usage.Percent)):0.##}%";
+    private string UploadPctCss => $"{Math.Min(100, Math.Max(0, uploadPct * 100)):0.##}%";
 
     protected override async System.Threading.Tasks.Task OnInitializedAsync()
     {
@@ -167,21 +176,25 @@
         finally { busy = false; }
     }
 
-    // Export is a plain download link (see the markup). Import uploads the picked .bak.
+    // Export is a plain streaming download link (see the markup — any size). Import uploads the
+    // picked .bak in chunks (no single-request size cap), verified server-side, then restored.
     private async System.Threading.Tasks.Task OnImportFile(InputFileChangeEventArgs e)
     {
         var file = e.File;
         if (file == null) return;
         busy = true;
+        uploadPct = 0;
         backupText = overwrite ? "Uploading and restoring (overwrite)…" : "Uploading and importing…";
         try
         {
-            using var stream = file.OpenReadStream(maxAllowedSize: 2_000_000_000L);
-            backupText = await Api.UploadImportAsync(stream, file.Name, overwrite);
+            // Read as a stream in chunks — a big cap is fine because we never buffer the whole file.
+            using var stream = file.OpenReadStream(maxAllowedSize: 100L * 1024 * 1024 * 1024);
+            var progress = new Progress<double>(p => { uploadPct = p; InvokeAsync(StateHasChanged); });
+            backupText = await Api.ImportChunkedAsync(stream, file.Size, file.Name, overwrite, progress);
             await LoadUsage();
         }
         catch (Exception ex) { backupText = "Import failed: " + ex.Message; }
-        finally { busy = false; }
+        finally { busy = false; uploadPct = 0; }
     }
 
     private async System.Threading.Tasks.Task SetTheme(string t) => await Theme.SetAsync(t);

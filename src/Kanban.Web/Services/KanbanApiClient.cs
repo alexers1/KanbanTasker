@@ -138,24 +138,89 @@ public class KanbanApiClient
     /// <summary>Relative URL that streams a fresh full backup as a download (LAN only).</summary>
     public const string BackupDownloadPath = "api/database/backup/download";
 
-    /// <summary>Upload a .bak and import it (multipart). overwrite=true is a full restore.</summary>
-    public async Task<string> UploadImportAsync(Stream stream, string fileName, bool overwrite)
-    {
-        using var content = new System.Net.Http.MultipartFormDataContent();
-        var part = new StreamContent(stream);
-        part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
-        content.Add(part, "file", fileName);
+    /// <summary>Default upload chunk size (bytes). Each chunk is one small request, so total
+    /// backup size is unbounded and a dropped chunk is retried instead of failing the whole upload.</summary>
+    public const int ImportChunkSize = 50 * 1024 * 1024;   // 50 MB
 
-        var resp = await _http.PostAsync($"api/database/import/upload?overwrite={(overwrite ? "true" : "false")}", content);
-        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+    /// <summary>Upload a .bak in chunks, verify it server-side (size + SHA-256), then import it
+    /// (overwrite=true is a full restore). Reports progress 0..1; retries each chunk a few times.</summary>
+    public async Task<string> ImportChunkedAsync(
+        Stream stream, long totalSize, string fileName, bool overwrite,
+        IProgress<double>? progress = null, int chunkSize = ImportChunkSize)
+    {
+        int totalChunks = totalSize <= 0 ? 1 : (int)((totalSize + chunkSize - 1) / chunkSize);
+
+        var initResp = await _http.PostAsJsonAsync("api/database/import/chunk/init",
+            new { fileName, totalSize, totalChunks, overwrite }, Json);
+        if (initResp.StatusCode == System.Net.HttpStatusCode.Forbidden)
             return "Backup/import is only available on the local network.";
-        if (!resp.IsSuccessStatusCode)
-            return $"Import failed (HTTP {(int)resp.StatusCode}).";
-        var body = await resp.Content.ReadFromJsonAsync<MsgResp>(Json);
-        return string.IsNullOrEmpty(body?.Message) ? "Import complete." : body!.Message;
+        if (!initResp.IsSuccessStatusCode)
+            return $"Import failed to start (HTTP {(int)initResp.StatusCode}).";
+        var uploadId = (await initResp.Content.ReadFromJsonAsync<InitResp>(Json))?.UploadId;
+        if (string.IsNullOrEmpty(uploadId)) return "Import failed to start (no session id).";
+
+        using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(
+            System.Security.Cryptography.HashAlgorithmName.SHA256);
+        var buffer = new byte[chunkSize];
+        long sent = 0;
+        int index = 0;
+        try
+        {
+            while (true)
+            {
+                int n = await ReadUpToAsync(stream, buffer, chunkSize);
+                if (n == 0) break;
+                hash.AppendData(buffer, 0, n);
+
+                bool ok = false;
+                for (int attempt = 0; attempt < 3 && !ok; attempt++)
+                {
+                    try
+                    {
+                        using var content = new ByteArrayContent(buffer, 0, n);
+                        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+                        var r = await _http.PostAsync($"api/database/import/chunk?uploadId={uploadId}&index={index}", content);
+                        ok = r.IsSuccessStatusCode;
+                        if (!ok && attempt == 2)
+                            return $"Import failed on chunk {index + 1}/{totalChunks} (HTTP {(int)r.StatusCode}).";
+                    }
+                    catch when (attempt < 2) { await Task.Delay(500 * (attempt + 1)); }
+                }
+
+                sent += n;
+                index++;
+                progress?.Report(totalSize > 0 ? (double)sent / totalSize : 0);
+            }
+
+            var sha = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+            var doneResp = await _http.PostAsync($"api/database/import/chunk/complete?uploadId={uploadId}&sha256={sha}", null);
+            var body = await doneResp.Content.ReadFromJsonAsync<MsgResp>(Json);
+            if (!doneResp.IsSuccessStatusCode)
+                return string.IsNullOrEmpty(body?.Message) ? $"Import failed (HTTP {(int)doneResp.StatusCode})." : body!.Message;
+            return string.IsNullOrEmpty(body?.Message) ? "Import complete." : body!.Message;
+        }
+        catch
+        {
+            try { await _http.PostAsync($"api/database/import/chunk/abort?uploadId={uploadId}", null); } catch { }
+            throw;
+        }
+    }
+
+    // Fill `buffer` with up to `count` bytes (a Stream.Read may return fewer than asked mid-file).
+    private static async Task<int> ReadUpToAsync(Stream s, byte[] buffer, int count)
+    {
+        int total = 0;
+        while (total < count)
+        {
+            int n = await s.ReadAsync(buffer.AsMemory(total, count - total));
+            if (n == 0) break;
+            total += n;
+        }
+        return total;
     }
 
     private record ArchiveResp(int Archived);
     private record PathResp(string Path);
     private record MsgResp(string Message);
+    private record InitResp(string UploadId);
 }
