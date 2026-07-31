@@ -30,6 +30,10 @@ window.kanbanDrag = (function () {
                 delayOnTouchOnly: false,        // same feel with mouse and touch
                 touchStartThreshold: 4,
                 forceFallback: true,            // our own clone → consistent look + smooth touch
+                fallbackOnBody: true,           // append the clone to <body>, not inside the
+                                                // glass panel — its backdrop-filter is a fixed-
+                                                // positioning containing block and would offset
+                                                // the clone from the cursor otherwise
                 animation: animationMs,         // neighbours slide to make room
                 easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
                 ghostClass: 'col-ghost',        // the landing-slot placeholder
